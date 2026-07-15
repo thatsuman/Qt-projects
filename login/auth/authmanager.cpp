@@ -1,10 +1,10 @@
 #include "authmanager.h"
 
 AuthManager::AuthManager()
+    : m_usernames({"jack", "john", "recon"})
+    , m_passwords({"jack123", "john123", "recon123"})
 {
     // Credentials list — to swap for a DB/config file, only change this constructor.
-    m_usernames = {"jack", "john", "recon"};
-    m_passwords = {"jack123", "john123", "recon123"};
 }
 
 AuthResult AuthManager::authenticate(const QString &username, const QString &password) const
