@@ -1,0 +1,38 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Qt/5.15.2/msvc2019_64/include",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtCore",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtGui",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtWidgets",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtNetwork",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtSql",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtXml",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtMultimedia",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtMultimediaWidgets",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtPrintSupport",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtOpenGL",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtSvg",
+                "C:/Qt/5.15.2/msvc2019_64/include/QtTest"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "WIN32",
+                "_WIN64",
+                "QT_WIDGETS_LIB",
+                "QT_GUI_LIB",
+                "QT_CORE_LIB"
+            ],
+            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}

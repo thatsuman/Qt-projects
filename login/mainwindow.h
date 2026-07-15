@@ -2,22 +2,29 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QTimer>
-#include <QFile>
-#include <QTextStream>
-#include <QDateTime>
 #include <QCloseEvent>
-#include <QMutex>
-#include <windows.h>
-#include <psapi.h>
+
+// Forward declarations — keep this header light
+class AuthManager;
+class ActivityLogger;
+class KeyboardHook;
+class MouseHook;
+class LoginUIManager;
 
 QT_BEGIN_NAMESPACE
-
-namespace Ui {
-class MainWindow;
-}
+namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
+/**
+ * @brief MainWindow is the thin orchestrator that wires together all
+ *        functional modules: AuthManager, ActivityLogger, KeyboardHook,
+ *        MouseHook, and LoginUIManager.
+ *
+ * It owns every module object and is responsible for:
+ *  - Connecting UI signals to the appropriate module methods.
+ *  - Handling Qt lifecycle events (close, show).
+ *  - No direct Windows API calls — all delegated to modules.
+ */
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -30,40 +37,19 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
-    void okButton();
-    void togglePasswordVisibility();
-    void logActivity();
-    void logoutButton();
+    void onLogin();
+    void onLogout();
+    void onTogglePasswordVisibility();
 
 private:
     Ui::MainWindow *ui;
-    QTimer *activityTimer;
-    QString currentUser;
-    bool isLogging;
 
-    QString lastWindowTitle;
-    QString lastProcessName;
-
-    QDateTime activityStartTime;
-
-    // Keyboard hook members
-    HHOOK keyboardHook;
-    QString keystrokeBuffer;
-    QMutex keystrokeMutex;
-    static MainWindow* instance; // For static hook callback
-
-    static LRESULT CALLBACK keyboardHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
-
-    // Mouse hook members
-    HHOOK mouseHook;
-    POINT lastMousePoint;
-    bool hasLastMousePoint;
-    double mouseDistance;
-    QMutex mouseMutex;
-
-    static LRESULT CALLBACK mouseHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
-
-
-    QString getKeyName(int vkCode, bool isKeyDown);
+    // Functional modules — owned by MainWindow
+    AuthManager     *m_auth;
+    KeyboardHook    *m_kbHook;
+    MouseHook       *m_mouseHook;
+    ActivityLogger  *m_logger;
+    LoginUIManager  *m_uiManager;
 };
+
 #endif // MAINWINDOW_H
