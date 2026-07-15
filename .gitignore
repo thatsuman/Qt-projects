@@ -31,7 +31,9 @@ Makefile*
 *build-*
 *.qm
 *.prl
-build/
+
+# Build directories
+build*/
 
 # Qt unit tests
 target_wrapper.*
