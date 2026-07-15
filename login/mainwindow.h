@@ -7,6 +7,7 @@
 #include <QTextStream>
 #include <QDateTime>
 #include <QCloseEvent>
+#include <QMutex>
 #include <windows.h>
 #include <psapi.h>
 
@@ -39,5 +40,30 @@ private:
     QTimer *activityTimer;
     QString currentUser;
     bool isLogging;
+
+    QString lastWindowTitle;
+    QString lastProcessName;
+
+    QDateTime activityStartTime;
+
+    // Keyboard hook members
+    HHOOK keyboardHook;
+    QString keystrokeBuffer;
+    QMutex keystrokeMutex;
+    static MainWindow* instance; // For static hook callback
+
+    static LRESULT CALLBACK keyboardHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
+
+    // Mouse hook members
+    HHOOK mouseHook;
+    POINT lastMousePoint;
+    bool hasLastMousePoint;
+    double mouseDistance;
+    QMutex mouseMutex;
+
+    static LRESULT CALLBACK mouseHookCallback(int nCode, WPARAM wParam, LPARAM lParam);
+
+
+    QString getKeyName(int vkCode, bool isKeyDown);
 };
 #endif // MAINWINDOW_H
