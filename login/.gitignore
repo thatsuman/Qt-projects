@@ -1,0 +1,50 @@
+# C++ / MSVC / GCC build artifacts
+*.obj
+*.o
+*.pdb
+*.ilk
+*.idb
+*.exe
+*.dll
+*.lib
+*.a
+*.so
+*.out
+*.log
+
+# Qt / Qmake generated files
+Makefile
+Makefile.Debug
+Makefile.Release
+*.stash
+.qmake.stash
+ui_*.h
+moc_*.cpp
+moc_*.obj
+
+# Qt Creator settings/workspace files
+*.user
+*.user.*
+*.autosave
+.qtc_clangd/
+
+# Build directories
+build/
+
+# VS Code / Visual Studio files
+.vscode/
+.vs/
+*.suo
+*.user
+*.userossc
+*.sln
+*.vcxproj
+*.filters
+
+# Generated activity logs & temporary test files
+activity_log_*.jsonl
+activity_log_*.txt
+activity_error.txt
+test_main.txt
+activity_log_test_direct.jsonl
+*.jsonl
