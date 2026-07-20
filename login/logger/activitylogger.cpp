@@ -4,6 +4,8 @@
 
 #include <QFile>
 #include <QTextStream>
+#include <QJsonObject>
+#include <QJsonDocument>
 
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 ActivityLogger::ActivityLogger(KeyboardHook *kbHook,
@@ -33,14 +35,20 @@ void ActivityLogger::start(const QString &username)
     m_activityStartTime = QDateTime();
     m_active            = true;
 
-    // Write a session-start marker to the log file
-    QString logFileName = QString("activity_log_%1.txt").arg(m_currentUser);
+    // Write a session-start marker to the log file in JSON Lines format
+    QString logFileName = QString("activity_log_%1.jsonl").arg(m_currentUser);
     QFile logFile(logFileName);
     if (logFile.open(QIODevice::Append | QIODevice::Text)) {
+        QJsonObject sessionStartObj;
+        sessionStartObj["type"] = "session_start";
+        sessionStartObj["timestamp"] = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+        sessionStartObj["username"] = m_currentUser;
+
+        QJsonDocument doc(sessionStartObj);
+        QByteArray bytes = doc.toJson(QJsonDocument::Compact);
+
         QTextStream out(&logFile);
-        out << "=== Logging started at "
-            << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-            << " ===\n";
+        out << bytes << "\n";
         logFile.close();
     }
 
@@ -153,19 +161,25 @@ void ActivityLogger::writeEntry(const QDateTime &from,
                                 const QString   &keystrokes,
                                 double           mousePixels)
 {
-    QString logFileName = QString("activity_log_%1.txt").arg(m_currentUser);
+    QString logFileName = QString("activity_log_%1.jsonl").arg(m_currentUser);
     QFile logFile(logFileName);
 
     if (logFile.open(QIODevice::Append | QIODevice::Text)) {
+        QJsonObject activityObj;
+        activityObj["type"] = "activity";
+        activityObj["timestamp_start"] = from.toString("yyyy-MM-dd hh:mm:ss");
+        activityObj["timestamp_end"] = to.toString("yyyy-MM-dd hh:mm:ss");
+        activityObj["window_title"] = windowTitle;
+        activityObj["process_name"] = processName;
+        activityObj["username"] = m_currentUser;
+        activityObj["keystrokes"] = keystrokes;
+        activityObj["mouse_distance_px"] = mousePixels;
+
+        QJsonDocument doc(activityObj);
+        QByteArray bytes = doc.toJson(QJsonDocument::Compact);
+
         QTextStream out(&logFile);
-        out << from.toString("yyyy-MM-dd hh:mm:ss")
-            << " - "
-            << to.toString("yyyy-MM-dd hh:mm:ss")
-            << " | " << windowTitle
-            << " | " << processName
-            << " | " << m_currentUser
-            << " | \"" << keystrokes << "\""
-            << " | Mouse Distance: " << mousePixels << " px\n";
+        out << bytes << "\n";
         logFile.close();
     }
 }
