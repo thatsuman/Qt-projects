@@ -6,6 +6,7 @@
 #include <QTextStream>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QDir>
 
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 ActivityLogger::ActivityLogger(KeyboardHook *kbHook,
@@ -35,8 +36,12 @@ void ActivityLogger::start(const QString &username)
     m_activityStartTime = QDateTime();
     m_active            = true;
 
+    // TASK 6.2: create per-user log directory
+    QString userLogDir = QString("logs/%1").arg(m_currentUser);
+    QDir().mkpath(userLogDir);
+
     // Write a session-start marker to the log file in JSON Lines format
-    QString logFileName = QString("activity_log_%1.jsonl").arg(m_currentUser);
+    QString logFileName = QString("%1/activity_log.jsonl").arg(userLogDir);
     QFile logFile(logFileName);
     if (logFile.open(QIODevice::Append | QIODevice::Text)) {
         QJsonObject sessionStartObj;
@@ -66,7 +71,7 @@ void ActivityLogger::stop()
 
 void ActivityLogger::flushCurrentActivity()
 {
-    if (!m_active || m_lastWindowTitle.isEmpty()) return;
+    if (!m_active || m_lastProcessName.isEmpty()) return;
 
     QDateTime now = QDateTime::currentDateTime();
 
@@ -115,19 +120,20 @@ void ActivityLogger::onTimer()
         QDateTime now = QDateTime::currentDateTime();
 
         // First observation — just record it and wait
-        if (m_lastWindowTitle.isEmpty()) {
+        if (m_lastProcessName.isEmpty()) {
             m_lastWindowTitle   = title;
             m_lastProcessName   = processName;
             m_activityStartTime = now;
             return;
         }
 
-        // Same window — keep timing
-        if (m_lastWindowTitle == title && m_lastProcessName == processName) {
+        // Same process/application — keep timing and update the latest window title
+        if (m_lastProcessName == processName) {
+            m_lastWindowTitle = title;
             return;
         }
 
-        // Window changed — flush the previous activity entry
+        // Process changed — flush the previous activity entry
         QString keystrokes = m_kbHook   ? m_kbHook->getAndClearBuffer()    : QString();
         double  pixels     = m_mouseHook? m_mouseHook->getAndResetDistance(): 0.0;
 
@@ -135,7 +141,7 @@ void ActivityLogger::onTimer()
                    m_lastWindowTitle, m_lastProcessName,
                    keystrokes, pixels);
 
-        // Start tracking the new window
+        // Start tracking the new process
         m_lastWindowTitle   = title;
         m_lastProcessName   = processName;
         m_activityStartTime = now;
@@ -161,7 +167,7 @@ void ActivityLogger::writeEntry(const QDateTime &from,
                                 const QString   &keystrokes,
                                 double           mousePixels)
 {
-    QString logFileName = QString("activity_log_%1.jsonl").arg(m_currentUser);
+    QString logFileName = QString("logs/%1/activity_log.jsonl").arg(m_currentUser);
     QFile logFile(logFileName);
 
     if (logFile.open(QIODevice::Append | QIODevice::Text)) {

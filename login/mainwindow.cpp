@@ -5,6 +5,7 @@
 #include "hooks/keyboardhook.h"
 #include "hooks/mousehook.h"
 #include "logger/activitylogger.h"
+#include "logger/networklogger.h"
 #include "ui/loginuimanager.h"
 
 #include <QMessageBox>
@@ -19,6 +20,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_kbHook(new KeyboardHook)
     , m_mouseHook(new MouseHook)
     , m_logger(new ActivityLogger(m_kbHook, m_mouseHook, this))
+    , m_netLogger(new NetworkLogger(this))
     , m_uiManager(new LoginUIManager(ui))
 {
     ui->setupUi(this);
@@ -74,8 +76,9 @@ void MainWindow::onLogin()
     }
     m_mouseHook->install();
 
-    // Start activity logger
+    // Start activity logger and network logger
     m_logger->start(result.username);
+    m_netLogger->start(result.username);
 
     // Transition UI
     m_uiManager->showLoggedInState();
@@ -87,6 +90,7 @@ void MainWindow::onLogout()
     // Flush the last activity before removing hooks
     m_logger->flushCurrentActivity();
     m_logger->stop();
+    m_netLogger->stop();
 
     m_kbHook->uninstall();
     m_mouseHook->uninstall();
@@ -110,6 +114,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         // Flush pending activity, then stop logging and hooks cleanly
         m_logger->flushCurrentActivity();
         m_logger->stop();
+        m_netLogger->stop();
         m_kbHook->uninstall();
         m_mouseHook->uninstall();
     }

@@ -1,9 +1,10 @@
-QT += widgets
+QT += widgets network
 
 CONFIG += c++17
 
-# Link Windows libraries required by hooks and activity logger
-win32: LIBS += -luser32 -lpsapi
+# Link Windows libraries required by hooks, activity logger, and network logger
+win32: DEFINES += WIN32_LEAN_AND_MEAN
+win32: LIBS += -luser32 -lpsapi -liphlpapi -ltdh -lws2_32 -ladvapi32 -lole32
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -19,6 +20,7 @@ SOURCES += \
     hooks/keyboardhook.cpp \
     hooks/mousehook.cpp \
     logger/activitylogger.cpp \
+    logger/networklogger.cpp \
     ui/loginuimanager.cpp
 
 HEADERS += \
@@ -27,6 +29,7 @@ HEADERS += \
     hooks/keyboardhook.h \
     hooks/mousehook.h \
     logger/activitylogger.h \
+    logger/networklogger.h \
     ui/loginuimanager.h
 
 FORMS += \
