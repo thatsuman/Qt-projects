@@ -1,15 +1,10 @@
-QT += widgets network
+QT += widgets
 
 CONFIG += c++17
 
-# Link Windows libraries required by hooks, activity logger, and network logger
+# Link Windows libraries required by hooks and activity logger
 win32: DEFINES += WIN32_LEAN_AND_MEAN
-win32: LIBS += -luser32 -lpsapi -liphlpapi -ltdh -lws2_32 -ladvapi32 -lole32
-
-# Force UAC elevation prompt (requireAdministrator) for ETW real-time tracing
-win32-msvc* {
-    QMAKE_LFLAGS += /MANIFESTUAC:\"level=\'requireAdministrator\' uiAccess=\'false\'\"
-}
+win32: LIBS += -luser32 -lpsapi
 
 # You can make your code fail to compile if it uses deprecated APIs.
 # In order to do so, uncomment the following line.
@@ -25,10 +20,7 @@ SOURCES += \
     hooks/keyboardhook.cpp \
     hooks/mousehook.cpp \
     logger/activitylogger.cpp \
-    logger/networklogger.cpp \
-    ui/loginuimanager.cpp \
-    etw/EtwTraceSession.cpp \
-    network/ProtocolClassifier.cpp
+    ui/loginuimanager.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -36,12 +28,7 @@ HEADERS += \
     hooks/keyboardhook.h \
     hooks/mousehook.h \
     logger/activitylogger.h \
-    logger/networklogger.h \
-    ui/loginuimanager.h \
-    etw/etw_providers.h \
-    etw/EtwTraceSession.h \
-    etw/etw_network_taxonomy.h \
-    network/ProtocolClassifier.h
+    ui/loginuimanager.h
 
 FORMS += \
     mainwindow.ui
