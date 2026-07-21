@@ -12,22 +12,27 @@
 #include <QDir>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <iphlpapi.h>
 #include <windows.h>
-#include <evntrace.h>
-#include <evntcons.h>
-#include <tdh.h>
-#include <psapi.h>
 #include <QHostInfo>
+
+#include "../etw/EtwTraceSession.h"
+#include "../network/ProtocolClassifier.h"
 
 // ── Per-connection record stored in-memory per PID ───────────────────────────
 struct ConnectionRecord {
-    QString remoteIp;
-    int     remotePort;
-    QString domain;       // resolved hostname (ETW or QHostInfo)
-    QString protocol;
     QString localIp;
-    int     localPort;
+    QString remoteIp;
+    QList<int> localPorts;    // List of consolidated local ports
+    QList<int> remotePorts;   // List of consolidated remote ports
+    QString domain;           // resolved hostname
+    QString protocol;         // e.g. "REST API", "WebSocket"
+    
+    quint64 bytesSent = 0;
+    quint64 bytesReceived = 0;
+    
+    QDateTime firstSeen;
+    QDateTime lastSeen;
+    int connectionCount = 1;  // Number of consolidated flows
 };
 
 // ── Per-PID session tracking structure ───────────────────────────────────────
@@ -37,34 +42,6 @@ struct PidSession {
     QDateTime        firstSeen;
     QDateTime        lastSeen;
     QList<ConnectionRecord> connections;
-};
-
-// ── DNS ETW Thread ─────────────────────────────────────────────────────────
-class DnsEtwThread : public QThread
-{
-    Q_OBJECT
-public:
-    explicit DnsEtwThread(QObject *parent = nullptr);
-    ~DnsEtwThread() override;
-
-    void stopTrace();
-    QString lookupDomain(const QString &ip);
-
-protected:
-    void run() override;
-
-private:
-    static VOID WINAPI eventRecordCallback(PEVENT_RECORD pEventRecord);
-    void handleEvent(PEVENT_RECORD pEventRecord);
-
-    TRACEHANDLE m_traceHandle;
-    TRACEHANDLE m_openedHandle;
-    EVENT_TRACE_PROPERTIES *m_traceProperties;
-    bool m_running;
-
-    static DnsEtwThread* s_instance;
-    QHash<QString, QString> m_dnsCache;
-    QMutex m_cacheMutex;
 };
 
 // ── Network Logger ──────────────────────────────────────────────────────────
@@ -78,12 +55,20 @@ public:
     void start(const QString &username);
     void stop();
 
+    static QString formatBytes(quint64 bytes);
+
+signals:
+    void networkActivityOccurred(const QString &logText);
+
 private slots:
     void onTimer();
     void onHostLookupDone(const QHostInfo &info);
+    
+    // ETW Event Slots
+    void onEtwTcpEvent(const EtwTcpEvent &event);
+    void onEtwHttpEvent(const EtwHttpEvent &event);
 
 private:
-    void pollConnections();
     QString getProcessNameFromPid(DWORD pid);
     void flushPidSession(const PidSession &session);
     void flushAllSessions();
@@ -94,13 +79,11 @@ private:
     QTimer  *m_timer;
     QString  m_currentUser;
     bool     m_active;
-    DnsEtwThread *m_dnsThread;
+    EtwTraceSession *m_etwSession;
+    ProtocolClassifier m_classifier;
 
     // PID → active session (connections still open)
     QHash<DWORD, PidSession> m_pidSessions;
-
-    // Simple dedup: track connection keys we already logged
-    QHash<QString, bool> m_loggedKeys;
 
     // QHostInfo pending lookups: lookupId → remoteIp
     QHash<int, QString> m_pendingLookups;

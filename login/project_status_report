@@ -1,0 +1,124 @@
+# Project Task Completion & Architecture Report
+
+**Project Name:** Qt User Activity & ETW Network Telemetry System  
+**Environment:** Windows 10/11 (x64) | Qt 5.15.2 MSVC2019 64-bit  
+**Build Tooling:** Qt Creator, `qmake`, `jom` (MSVC C++17 Compiler)  
+**Specification Workflow:** OpenSpec (`spec-driven` schema)  
+
+---
+
+## 1. Executive Summary
+
+This project delivers a high-performance, real-time user activity monitoring and network telemetry logging solution built on C++ and Qt 5. The application enforces administrative privilege elevation at startup via Windows UAC manifest integration, intercepts user input activity (keystrokes, mouse movement, window focus changes), traces kernel and user-mode network events via Event Tracing for Windows (ETW), classifies application protocols (REST API, WebSockets, TLS, DNS, RAW TCP/UDP), and writes structured telemetry logs in append-only **JSON Lines (`.jsonl`)** format.
+
+All planned changes have been implemented, tested, and archived into the canonical specifications tree under `openspec/specs/`.
+
+---
+
+## 2. Core Capabilities & Architecture
+
+```mermaid
+graph TD
+    A["MainWindow (Qt 5 UI & Status Bar)"] --> B["AuthManager (Authentication)"]
+    A --> C["KeyboardHook & MouseHook (Win32 Hooks)"]
+    A --> D["ActivityLogger (Window Focus & Input Metrics)"]
+    A --> E["NetworkLogger (ETW Traffic Pipeline)"]
+    
+    E --> F["EtwTraceSession (ETW Real-Time Event Pump)"]
+    E --> G["ProtocolClassifier (Heuristic & Header Classifier)"]
+    
+    F --> H["Windows System ETW Providers\n(TCPIP, WebIO, WinINet, DNS, NDIS)"]
+    
+    D --> I["activity_log_<user>.jsonl"]
+    E --> J["network_log_<user>.jsonl"]
+```
+
+### 2.1 User Activity Logging Engine
+* **Low-Level Input Hooks**: Uses Win32 `SetWindowsHookEx` API to capture keyboard strokes and calculate cumulative mouse movement distance.
+* **Window Focus Polling**: Tracks active window changes (`GetForegroundWindow`, `GetWindowTextW`, `GetWindowThreadProcessId`), aggregating keystrokes, mouse distance, duration, and process name per focus session.
+* **JSON Lines Output**: Appends structured JSON Lines (`activity_log_<username>.jsonl`) for session starts and application focus events, alongside error trace handling (`activity_error.txt`).
+
+### 2.2 ETW Real-Time Network Telemetry Engine
+* **Multi-Provider Subscriptions**: Subscribes directly to Windows ETW kernel and user-mode trace providers:
+  * `Microsoft-Windows-TCPIP` (`{2F07E2EE-15DB-40F1-90EF-9D7BA282188A}`)
+  * `Microsoft-Windows-WebIO` (`{50B3E73C-9370-461D-BB9F-26F32D68887D}`)
+  * `Microsoft-Windows-WinINet` (`{43D1A55C-76D6-4F7E-995C-64C711E5CAFE}`)
+  * `Microsoft-Windows-DNS-Client` (`{1C95126E-7EEA-49A9-A3FE-A378B03DDB4D}`)
+  * `Microsoft-Windows-NDIS-PacketCapture` (`{2ED6006E-4729-4609-B423-3EE7BCD678EF}`)
+* **Binary Socket Deserialization (`parseSockAddr`)**: Parses raw `SOCKADDR_IN` (IPv4) and `SOCKADDR_IN6` (IPv6) binary structures delivered in ETW payloads into standard IP strings and port numbers using `inet_ntop`.
+* **TCB Pointer Connection Mapping**: Tracks TCP socket control blocks (`Tcb` pointers) upon connection completion (`EventID=1033`), correlating subsequent data send (`1159`/`1160`) and receive (`1074`) events with the originating PID, process name, and remote endpoints.
+
+### 2.3 Protocol Classification Engine
+* **Protocol Taxonomy**: Classifies network streams into `REST API`, `WebSocket`, `HTTP/1.1`, `HTTP/2`, `gRPC`, `TLS/SSL`, `DNS`, `RAW_TCP`, and `RAW_UDP`.
+* **Dynamic Protocol Upgrades**: Detects `ws://` / `wss://` schemes and `Upgrade: websocket` HTTP headers from WebIO/WinINet events to seamlessly transition connection records from initial TCP/TLS to WebSocket or REST API status.
+* **Asynchronous Reverse DNS Resolution**: Resolves remote IP addresses to domain names asynchronously (`QHostInfo`) using an internal DNS lookup cache refreshed via the DNS Client ETW stream.
+
+### 2.4 Security & UAC Manifest Integration
+* **UAC Elevation Prompt**: Configured `login.pro` with MSVC linker flag:
+  ```qmake
+  win32-msvc* {
+      QMAKE_LFLAGS += /MANIFESTUAC:\"level=\'requireAdministrator\' uiAccess=\'false\'\"
+  }
+  ```
+  Forces Windows to display the UAC privilege elevation prompt on launch. Execution is cleanly blocked if UAC is declined.
+* **Visual Status Bar**: Displays `"System Admin Privileges"` on `QStatusBar` when launched with elevated rights.
+
+---
+
+## 3. Technology Stack & Dependencies
+
+| Layer | Component / Technology | Purpose |
+|---|---|---|
+| **Core Framework** | Qt 5.15.2 (QtWidgets, QtNetwork, QtCore, QtGui) | Cross-platform UI, event loop, JSON handling, timers, signals/slots |
+| **Language Standard** | C++17 (MSVC 2019 64-bit compiler) | Strongly-typed, native performance C++ |
+| **Operating System APIs** | Win32 API (`user32`, `psapi`, `iphlpapi`, `advapi32`) | Process enumeration, hooks, token elevation checks |
+| **Tracing Engine** | Event Tracing for Windows (`evntrace.h`, `evntcons.h`, `tdh.h`) | Kernel & user-mode real-time event pump |
+| **Networking APIs** | Winsock 2 (`winsock2.h`, `ws2tcpip.h`, `ws2_32.lib`) | Socket address parsing (`sockaddr_in`, `sockaddr_in6`, `inet_ntop`) |
+| **Storage Format** | JSON Lines (`.jsonl`) | Structured, high-efficiency append-only event logging |
+| **Spec Management** | OpenSpec (`spec-driven` workflow) | Requirement tracking, change proposals, and canonical spec promotion |
+
+---
+
+## 4. Key Engineering Challenges & Solutions
+
+1. **Qt Creator Build Compatibility & Compiler Warnings**:
+   * *Problem:* MSVC emitted 64-bit to 32-bit integer conversion warnings (`C4267`) on custom `qHash` signatures.
+   * *Solution:* Aligned signature parameters to Qt 5's standard `uint qHash(const ConnectionTuple &key, uint seed)` types.
+
+2. **ETW GUID Mismatches & Event Silence**:
+   * *Problem:* Real-time trace callbacks were silent because hardcoded GUIDs did not match the registered system GUIDs.
+   * *Solution:* Identified exact provider GUIDs via `logman` and `wevtutil`, updating definitions in `etw/etw_providers.h`.
+
+3. **ETW Socket Address Parsing & Uninitialized TDH Struct**:
+   * *Problem:* Manifest-based `Microsoft-Windows-TCPIP` events pass binary `SocketAddress` payloads rather than simple string fields. Furthermore, stack-allocated `PROPERTY_DATA_DESCRIPTOR` structures were missing zero-initialization, causing Windows `TdhGetProperty` API calls to fail.
+   * *Solution:* Value-initialized `PROPERTY_DATA_DESCRIPTOR desc = {};` and built the `parseSockAddr` helper to deserialize IPv4/IPv6 socket structures dynamically.
+
+---
+
+## 5. Verification & Log Deliverables
+
+The application produces three primary log files during runtime:
+
+1. **`logs/<username>/activity_log_<username>.jsonl`**:
+   Contains user interaction session data (keystrokes, mouse distance, active window titles, process names, timestamps).
+2. **`logs/<username>/network_log_<username>.jsonl`**:
+   Contains active network connection sessions (local/remote IP & ports, PID, process name, bytes sent/received, classified protocol, domain).
+3. **`network_logger_debug.txt`**:
+   Detailed diagnostic log recording ETW session startup, ProcessTrace thread status, and event parsing sizes.
+
+---
+
+## 6. OpenSpec Archive & Specification Promotion
+
+All changes developed across the change proposals have been formally verified, merged, and archived:
+
+* **`openspec/changes/archive/2026-07-21-etw-network-protocol-analysis/`**
+* **`openspec/changes/archive/2026-07-21-json-logging/`**
+* **`openspec/changes/archive/2026-07-21-uac-elevation-and-etw-fix/`**
+
+Canonical specifications now live in:
+* [`openspec/specs/activity-logging/spec.md`](file:///c:/Users/GLB-BLR-304/Downloads/Qt-projects/login/openspec/specs/activity-logging/spec.md)
+* [`openspec/specs/etw-uac/spec.md`](file:///c:/Users/GLB-BLR-304/Downloads/Qt-projects/login/openspec/specs/etw-uac/spec.md)
+* [`openspec/specs/etw-network-tracing/spec.md`](file:///c:/Users/GLB-BLR-304/Downloads/Qt-projects/login/openspec/specs/etw-network-tracing/spec.md)
+* [`openspec/specs/network-data-extraction/spec.md`](file:///c:/Users/GLB-BLR-304/Downloads/Qt-projects/login/openspec/specs/network-data-extraction/spec.md)
+* [`openspec/specs/protocol-classification/spec.md`](file:///c:/Users/GLB-BLR-304/Downloads/Qt-projects/login/openspec/specs/protocol-classification/spec.md)

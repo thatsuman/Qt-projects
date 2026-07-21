@@ -7,10 +7,12 @@
 #include "logger/activitylogger.h"
 #include "logger/networklogger.h"
 #include "ui/loginuimanager.h"
+#include "etw/EtwTraceSession.h"
 
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QTextEdit>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 MainWindow::MainWindow(QWidget *parent)
@@ -22,17 +24,35 @@ MainWindow::MainWindow(QWidget *parent)
     , m_logger(new ActivityLogger(m_kbHook, m_mouseHook, this))
     , m_netLogger(new NetworkLogger(this))
     , m_uiManager(new LoginUIManager(ui))
+    , m_telemetryView(new QTextEdit(this))
 {
     ui->setupUi(this);
 
+    // Check UAC privileges and show status in the status bar
+    if (EtwTraceSession::isUserAdminOrPerformanceLogUser()) {
+        ui->statusbar->showMessage("System Admin Privileges");
+    } else {
+        ui->statusbar->showMessage("Standard User Privileges (ETW Disabled)");
+    }
+
     // Set password field to hidden by default
     ui->password_field->setEchoMode(QLineEdit::Password);
+
+    // Setup network telemetry view
+    m_telemetryView->setReadOnly(true);
+    m_telemetryView->setGeometry(300, 100, 560, 250);
+    m_telemetryView->setStyleSheet("QTextEdit { background-color: #1e1e1e; color: #00ff00; font-family: 'Consolas'; font-size: 11px; border: 1px solid #333; }");
+    m_telemetryView->hide();
 
     // Wire UI signals to our slots
     connect(ui->okPushButton,      &QPushButton::clicked, this, &MainWindow::onLogin);
     connect(ui->exitPushButton,    &QPushButton::clicked, this, &MainWindow::close);
     connect(ui->pushButton_eye,    &QPushButton::clicked, this, &MainWindow::onTogglePasswordVisibility);
     connect(ui->logoutPushButton,  &QPushButton::clicked, this, &MainWindow::onLogout);
+
+    connect(m_netLogger, &NetworkLogger::networkActivityOccurred, this, [this](const QString &logText) {
+        m_telemetryView->append(logText);
+    });
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -80,6 +100,11 @@ void MainWindow::onLogin()
     m_logger->start(result.username);
     m_netLogger->start(result.username);
 
+    // Show telemetry view
+    m_telemetryView->show();
+    m_telemetryView->clear();
+    m_telemetryView->append("--- Real-time ETW Network Telemetry Feed (Running with Administrator privileges) ---");
+
     // Transition UI
     m_uiManager->showLoggedInState();
     showMinimized();
@@ -91,6 +116,8 @@ void MainWindow::onLogout()
     m_logger->flushCurrentActivity();
     m_logger->stop();
     m_netLogger->stop();
+
+    m_telemetryView->hide();
 
     m_kbHook->uninstall();
     m_mouseHook->uninstall();
@@ -115,6 +142,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         m_logger->flushCurrentActivity();
         m_logger->stop();
         m_netLogger->stop();
+        m_telemetryView->hide();
         m_kbHook->uninstall();
         m_mouseHook->uninstall();
     }
