@@ -10,6 +10,7 @@ class ActivityLogger;
 class KeyboardHook;
 class MouseHook;
 class LoginUIManager;
+namespace Network { class NetworkOrchestrator; }
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -50,6 +51,7 @@ private:
     MouseHook       *m_mouseHook;
     ActivityLogger  *m_logger;
     LoginUIManager  *m_uiManager;
+    Network::NetworkOrchestrator *m_networkOrch;
 };
 
 #endif // MAINWINDOW_H
