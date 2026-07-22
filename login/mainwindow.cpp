@@ -5,11 +5,13 @@
 #include "hooks/keyboardhook.h"
 #include "hooks/mousehook.h"
 #include "logger/activitylogger.h"
+#include "network/orchestrator/networkorchestrator.h"
 #include "ui/loginuimanager.h"
 
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QStatusBar>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 MainWindow::MainWindow(QWidget *parent)
@@ -20,6 +22,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_mouseHook(new MouseHook)
     , m_logger(new ActivityLogger(m_kbHook, m_mouseHook, this))
     , m_uiManager(new LoginUIManager(ui))
+    , m_networkOrch(new Network::NetworkOrchestrator(this))
 {
     ui->setupUi(this);
 
@@ -31,6 +34,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->exitPushButton,    &QPushButton::clicked, this, &MainWindow::close);
     connect(ui->pushButton_eye,    &QPushButton::clicked, this, &MainWindow::onTogglePasswordVisibility);
     connect(ui->logoutPushButton,  &QPushButton::clicked, this, &MainWindow::onLogout);
+    connect(m_networkOrch, &Network::NetworkOrchestrator::statusChanged,
+            this, [this](const QString &status) {
+                statusBar()->showMessage(status, 5000);
+            });
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -76,6 +83,7 @@ void MainWindow::onLogin()
 
     // Start activity logger and network logger
     m_logger->start(result.username);
+    m_networkOrch->start(result.username);
 
     // Transition UI
     m_uiManager->showLoggedInState();
@@ -84,6 +92,8 @@ void MainWindow::onLogin()
 
 void MainWindow::onLogout()
 {
+    m_networkOrch->stop();
+
     // Flush the last activity before removing hooks
     m_logger->flushCurrentActivity();
     m_logger->stop();
@@ -107,6 +117,8 @@ void MainWindow::onTogglePasswordVisibility()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (m_logger->isActive()) {
+        m_networkOrch->stop();
+
         // Flush pending activity, then stop logging and hooks cleanly
         m_logger->flushCurrentActivity();
         m_logger->stop();

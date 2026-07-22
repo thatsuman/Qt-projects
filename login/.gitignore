@@ -11,6 +11,8 @@
 *.so
 *.out
 *.log
+!third_party/WinDivert/x64/WinDivert.dll
+!third_party/WinDivert/x64/WinDivert.lib
 
 # Qt / Qmake generated files
 Makefile
@@ -30,6 +32,10 @@ moc_*.obj
 
 # Build directories
 build/
+release/WinDivert.dll
+release/WinDivert64.sys
+release/logs/
+build/**/logs/
 
 # VS Code / Visual Studio files
 .vscode/
