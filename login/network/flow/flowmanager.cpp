@@ -2,6 +2,8 @@
 
 #include "network/protocol/protocolinferencer.h"
 
+#include <algorithm>
+
 namespace Network {
 
 namespace {
@@ -176,33 +178,55 @@ void FlowManager::handleDnsObservation(const DnsObservation &observation)
 void FlowManager::flushAll(const QString &closeReason)
 {
     const QDateTime nowUtc = QDateTime::currentDateTimeUtc();
-    const QList<FlowKey> keys = m_sessions.keys();
-    for (const FlowKey &key : keys) {
-        closeFlow(key, closeReason, nowUtc);
+
+    QList<FlowSession> sessions = m_sessions.values();
+    std::sort(sessions.begin(), sessions.end(), [](const FlowSession &a, const FlowSession &b) {
+        if (a.startTimeUtc != b.startTimeUtc) {
+            return a.startTimeUtc < b.startTimeUtc;
+        }
+        return a.lastSeenUtc < b.lastSeenUtc;
+    });
+
+    for (const FlowSession &session : sessions) {
+        closeFlow(session.key, closeReason, nowUtc);
     }
 }
 
 void FlowManager::sweepIdleFlows()
 {
     const QDateTime nowUtc = QDateTime::currentDateTimeUtc();
-    QList<QPair<FlowKey, QString>> toClose;
+    struct PendingClose {
+        FlowKey key;
+        QString reason;
+        QDateTime startTimeUtc;
+    };
+    QList<PendingClose> toClose;
 
     for (auto it = m_sessions.constBegin(); it != m_sessions.constEnd(); ++it) {
         const FlowSession &session = it.value();
         const qint64 idleSeconds = session.lastSeenUtc.secsTo(nowUtc);
 
+        QString reason;
         if (session.key.transport == TransportProtocol::Tcp && session.tcpFinSeen
                 && session.tcpFinSeenUtc.secsTo(nowUtc) >= m_tcpFinGraceSeconds) {
-            toClose.append(qMakePair(it.key(), QString("tcp_fin")));
+            reason = "tcp_fin";
         } else if (session.key.transport == TransportProtocol::Tcp && idleSeconds >= m_tcpIdleSeconds) {
-            toClose.append(qMakePair(it.key(), QString("idle_timeout")));
+            reason = "idle_timeout";
         } else if (session.key.transport == TransportProtocol::Udp && idleSeconds >= m_udpIdleSeconds) {
-            toClose.append(qMakePair(it.key(), QString("idle_timeout")));
+            reason = "idle_timeout";
+        }
+
+        if (!reason.isEmpty()) {
+            toClose.append({it.key(), reason, session.startTimeUtc});
         }
     }
 
+    std::sort(toClose.begin(), toClose.end(), [](const PendingClose &a, const PendingClose &b) {
+        return a.startTimeUtc < b.startTimeUtc;
+    });
+
     for (const auto &item : toClose) {
-        closeFlow(item.first, item.second, nowUtc);
+        closeFlow(item.key, item.reason, nowUtc);
     }
 }
 
