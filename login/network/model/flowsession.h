@@ -55,6 +55,7 @@ struct FlowSession
     ProcessAttribution process;
     HostnameAttribution remoteHost;
     ProtocolHint appProtocol;
+    QString applicationLayerCategory = "unknown";
     bool ipv6 = false;
     bool loopback = false;
 };

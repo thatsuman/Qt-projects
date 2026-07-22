@@ -20,7 +20,7 @@ void NetworkJsonlWriter::start(const QString &username)
     QDir().mkpath(m_logDirectory);
 
     m_sessionFile.setFileName(QString("%1/network_log.jsonl").arg(m_logDirectory));
-    if (!m_sessionFile.open(QIODevice::Append | QIODevice::Text)) {
+    if (!m_sessionFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
         logError(QString("Failed to open network_log.jsonl: %1").arg(m_sessionFile.errorString()));
     }
 
@@ -46,7 +46,7 @@ void NetworkJsonlWriter::stop()
 
 void NetworkJsonlWriter::writeSession(const NetworkSessionRecord &record)
 {
-    if (!m_sessionFile.isOpen()) {
+    if (!m_sessionFile.isOpen() || !shouldWriteSession(record)) {
         return;
     }
 
@@ -71,6 +71,28 @@ void NetworkJsonlWriter::logError(const QString &message)
     out << QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
         << " - " << message << "\n";
     m_errorFile.flush();
+}
+
+bool NetworkJsonlWriter::shouldWriteSession(const NetworkSessionRecord &record) const
+{
+    if (record.loopback || record.key.remoteIp.isNull()) {
+        return false;
+    }
+
+    const quint64 totalBytes = record.bytesSentTotal + record.bytesReceivedTotal;
+    const quint64 totalPackets = record.packetsSent + record.packetsReceived;
+    const bool hasHostname = !record.remoteHost.primaryName.isEmpty();
+    const bool hasProcess = record.process.pid != 0 || record.process.name != "unknown";
+
+    if (!hasHostname && !hasProcess) {
+        return false;
+    }
+
+    if (!hasHostname && totalBytes < 4096 && totalPackets < 8) {
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace Network

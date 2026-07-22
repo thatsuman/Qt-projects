@@ -8,6 +8,7 @@ class QThread;
 
 namespace Network {
 
+class ConsecutiveRecordMerger;
 class EtwDnsMonitor;
 class FlowManager;
 class IpHelperConnectionPoller;
@@ -54,6 +55,7 @@ private:
     FlowManager *m_flowManager = nullptr;
     EtwDnsMonitor *m_dnsMonitor = nullptr;
     IpHelperConnectionPoller *m_ipHelperPoller = nullptr;
+    ConsecutiveRecordMerger *m_merger = nullptr;
     NetworkJsonlWriter *m_writer = nullptr;
 };
 

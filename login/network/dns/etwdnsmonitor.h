@@ -4,6 +4,7 @@
 #include "network/model/networkevents.h"
 
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -45,6 +46,7 @@ private:
     TRACEHANDLE m_sessionHandle = 0;
     TRACEHANDLE m_traceHandle = 0;
     QString m_sessionName;
+    QSet<QString> m_loggedUnknownEventShapes;
 };
 
 } // namespace Network

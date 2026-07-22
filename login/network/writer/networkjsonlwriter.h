@@ -24,6 +24,8 @@ public slots:
     void logError(const QString &message);
 
 private:
+    bool shouldWriteSession(const NetworkSessionRecord &record) const;
+
     QString m_username;
     QString m_logDirectory;
     QFile m_sessionFile;

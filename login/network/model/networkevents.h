@@ -30,6 +30,8 @@ struct PacketObservation
     quint16 dstPort = 0;
     quint64 packetBytes = 0;
     quint64 payloadBytes = 0;
+    QString visibleHostname;
+    QString visibleAlpn;
     TcpFlags tcpFlags;
     bool loopback = false;
     quint32 interfaceIndex = 0;

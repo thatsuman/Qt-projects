@@ -46,6 +46,8 @@ private slots:
         outbound.dstPort = 443;
         outbound.packetBytes = 100;
         outbound.payloadBytes = 60;
+        outbound.visibleHostname = "example.com";
+        outbound.visibleAlpn = "h2,http/1.1";
         outbound.tcpFlags.syn = true;
 
         PacketObservation inbound = outbound;
@@ -65,13 +67,16 @@ private slots:
         const NetworkSessionRecord record = qvariant_cast<NetworkSessionRecord>(spy.takeFirst().at(0));
         const QJsonObject json = record.toJson();
 
-        QCOMPARE(json.value("type").toString(), QString("network_session"));
-        QCOMPARE(json.value("username").toString(), QString("tester"));
         QCOMPARE(json.value("transport_protocol").toString(), QString("TCP"));
         QCOMPARE(json.value("app_protocol_hint").toString(), QString("HTTPS"));
+        QCOMPARE(json.value("application_layer_category").toString(), QString("HTTP/2 over TLS"));
         QCOMPARE(json.value("close_reason").toString(), QString("app_shutdown"));
-        QCOMPARE(json.value("local").toObject().value("port").toInt(), 53000);
         QCOMPARE(json.value("remote").toObject().value("port").toInt(), 443);
+        QCOMPARE(json.value("remote").toObject().value("hostname").toString(), QString("example.com"));
+        QCOMPARE(json.value("remote").toObject().value("hostname_confidence").toString(), QString("high"));
+        QVERIFY(!json.contains("local"));
+        QVERIFY(!json.contains("flow_id"));
+        QVERIFY(!json.contains("username"));
     }
 
     void writerCreatesJsonlFile()
@@ -99,6 +104,7 @@ private slots:
         packet.dstPort = 53;
         packet.packetBytes = 70;
         packet.payloadBytes = 42;
+        packet.visibleHostname = "one.one.one.one";
 
         manager.handlePacket(packet);
         manager.flushAll("app_shutdown");
@@ -107,8 +113,9 @@ private slots:
         QFile file("logs/tester/network_log.jsonl");
         QVERIFY(file.open(QIODevice::ReadOnly | QIODevice::Text));
         const QByteArray contents = file.readAll();
-        QVERIFY(contents.contains("\"type\":\"network_session\""));
+        QVERIFY(contents.contains("\"hostname\":\"one.one.one.one\""));
         QVERIFY(contents.contains("\"app_protocol_hint\":\"DNS\""));
+        QVERIFY(contents.contains("\"application_layer_category\":\"DNS\""));
 
         QVERIFY(QDir::setCurrent(originalPath));
     }
@@ -136,6 +143,51 @@ private slots:
         ProcessConnectionSnapshot snapshot;
         snapshot.timestampUtc = QDateTime::currentDateTimeUtc();
         snapshot.pid = 1234;
+        snapshot.processName = "chrome.exe";
+        snapshot.processPath = "C:/Program Files/Google/Chrome/Application/chrome.exe";
+        snapshot.key = normalizePacketKey(packet);
+        manager.handleProcessSnapshot(snapshot);
+
+        manager.flushAll("app_shutdown");
+
+        QCOMPARE(spy.count(), 1);
+        const NetworkSessionRecord record = qvariant_cast<NetworkSessionRecord>(spy.takeFirst().at(0));
+        const QJsonObject process = record.toJson().value("process").toObject();
+        QCOMPARE(process.value("pid").toInt(), 1234);
+        QCOMPARE(process.value("name").toString(), QString("chrome.exe"));
+        QCOMPARE(process.value("confidence").toString(), QString("medium"));
+    }
+
+    void flowLifecycleBeforePacketEnrichesSession()
+    {
+        FlowManager manager;
+        QSignalSpy spy(&manager, &FlowManager::sessionClosed);
+        QVERIFY(spy.isValid());
+
+        manager.start("tester");
+
+        PacketObservation packet;
+        packet.timestampUtc = QDateTime::currentDateTimeUtc();
+        packet.direction = Direction::Outbound;
+        packet.transport = TransportProtocol::Tcp;
+        packet.srcIp = IpAddress::fromV4Bytes(10, 0, 0, 2);
+        packet.srcPort = 55100;
+        packet.dstIp = IpAddress::fromV4Bytes(93, 184, 216, 34);
+        packet.dstPort = 443;
+        packet.packetBytes = 64;
+
+        FlowLifecycleObservation lifecycle;
+        lifecycle.timestampUtc = packet.timestampUtc.addMSecs(-50);
+        lifecycle.event = FlowLifecycleEvent::Established;
+        lifecycle.pid = 2468;
+        lifecycle.key = normalizePacketKey(packet);
+        manager.handleFlowLifecycle(lifecycle);
+
+        manager.handlePacket(packet);
+
+        ProcessConnectionSnapshot snapshot;
+        snapshot.timestampUtc = packet.timestampUtc.addMSecs(50);
+        snapshot.pid = 2468;
         snapshot.processName = "browser.exe";
         snapshot.processPath = "C:/Program Files/Browser/browser.exe";
         snapshot.key = normalizePacketKey(packet);
@@ -146,9 +198,49 @@ private slots:
         QCOMPARE(spy.count(), 1);
         const NetworkSessionRecord record = qvariant_cast<NetworkSessionRecord>(spy.takeFirst().at(0));
         const QJsonObject process = record.toJson().value("process").toObject();
-        QCOMPARE(process.value("pid").toInt(), 1234);
+        QCOMPARE(process.value("pid").toInt(), 2468);
         QCOMPARE(process.value("name").toString(), QString("browser.exe"));
-        QCOMPARE(process.value("source").toString(), QString("iphelper"));
+        QCOMPARE(process.value("confidence").toString(), QString("high"));
+    }
+
+    void udpLocalOnlySnapshotEnrichesSession()
+    {
+        FlowManager manager;
+        QSignalSpy spy(&manager, &FlowManager::sessionClosed);
+        QVERIFY(spy.isValid());
+
+        manager.start("tester");
+
+        PacketObservation packet;
+        packet.timestampUtc = QDateTime::currentDateTimeUtc();
+        packet.direction = Direction::Outbound;
+        packet.transport = TransportProtocol::Udp;
+        packet.srcIp = IpAddress::fromV4Bytes(10, 0, 0, 2);
+        packet.srcPort = 55200;
+        packet.dstIp = IpAddress::fromV4Bytes(1, 1, 1, 1);
+        packet.dstPort = 53;
+        packet.packetBytes = 70;
+
+        manager.handlePacket(packet);
+
+        ProcessConnectionSnapshot snapshot;
+        snapshot.timestampUtc = packet.timestampUtc.addMSecs(50);
+        snapshot.pid = 1357;
+        snapshot.processName = "resolver.exe";
+        snapshot.processPath = "C:/Windows/System32/resolver.exe";
+        snapshot.key.localIp = packet.srcIp;
+        snapshot.key.localPort = packet.srcPort;
+        snapshot.key.transport = TransportProtocol::Udp;
+        snapshot.key.ipVersion = 4;
+        manager.handleProcessSnapshot(snapshot);
+
+        manager.flushAll("app_shutdown");
+
+        QCOMPARE(spy.count(), 1);
+        const NetworkSessionRecord record = qvariant_cast<NetworkSessionRecord>(spy.takeFirst().at(0));
+        const QJsonObject process = record.toJson().value("process").toObject();
+        QCOMPARE(process.value("pid").toInt(), 1357);
+        QCOMPARE(process.value("name").toString(), QString("resolver.exe"));
         QCOMPARE(process.value("confidence").toString(), QString("medium"));
     }
 

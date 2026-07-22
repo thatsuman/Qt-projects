@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QProcessEnvironment>
 #include <QRegularExpression>
+#include <QStringList>
 #include <QVector>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -43,10 +44,10 @@ QString propertyName(PTRACE_EVENT_INFO info, const EVENT_PROPERTY_INFO &property
     return QString::fromWCharArray(name);
 }
 
-QString propertyToString(EVENT_RECORD *record, PTRACE_EVENT_INFO info, const EVENT_PROPERTY_INFO &property)
+QByteArray propertyRawBytes(EVENT_RECORD *record, PTRACE_EVENT_INFO info, const EVENT_PROPERTY_INFO &property)
 {
     if (property.NameOffset == 0) {
-        return QString();
+        return QByteArray();
     }
 
     PROPERTY_DATA_DESCRIPTOR descriptor = {};
@@ -55,30 +56,128 @@ QString propertyToString(EVENT_RECORD *record, PTRACE_EVENT_INFO info, const EVE
 
     ULONG size = 0;
     if (TdhGetPropertySize(record, 0, nullptr, 1, &descriptor, &size) != ERROR_SUCCESS || size == 0) {
-        return QString();
+        return QByteArray();
     }
 
     QByteArray buffer(static_cast<int>(size), 0);
     if (TdhGetProperty(record, 0, nullptr, 1, &descriptor, size,
                        reinterpret_cast<PBYTE>(buffer.data())) != ERROR_SUCCESS) {
+        return QByteArray();
+    }
+
+    return buffer;
+}
+
+QString trimmedNulls(QString value)
+{
+    while (!value.isEmpty() && value.back() == QChar::Null) {
+        value.chop(1);
+    }
+    return value.trimmed();
+}
+
+void appendIfUseful(QStringList &values, const QString &value)
+{
+    const QString trimmed = trimmedNulls(value);
+    if (trimmed.size() >= 4 && !values.contains(trimmed)) {
+        values.append(trimmed);
+    }
+}
+
+QStringList printableStringsFromBytes(const QByteArray &buffer)
+{
+    QStringList values;
+
+    QByteArray ascii;
+    for (char ch : buffer) {
+        const uchar byte = static_cast<uchar>(ch);
+        if (byte >= 0x20 && byte <= 0x7e) {
+            ascii.append(ch);
+        } else {
+            if (ascii.size() >= 4) {
+                values.append(QString::fromLatin1(ascii));
+            }
+            ascii.clear();
+        }
+    }
+    if (ascii.size() >= 4) {
+        appendIfUseful(values, QString::fromLatin1(ascii));
+    }
+
+    const auto *bytes = reinterpret_cast<const uchar *>(buffer.constData());
+    for (int offset = 0; offset < 2 && offset + 1 < buffer.size(); ++offset) {
+        QString utf16;
+        for (int i = offset; i + 1 < buffer.size(); i += 2) {
+            const ushort codeUnit = static_cast<ushort>(bytes[i])
+                    | (static_cast<ushort>(bytes[i + 1]) << 8);
+            if (codeUnit >= 0x20 && codeUnit < 0xd800) {
+                utf16.append(QChar(codeUnit));
+                continue;
+            }
+
+            appendIfUseful(values, utf16);
+            utf16.clear();
+        }
+        appendIfUseful(values, utf16);
+    }
+
+    values.removeDuplicates();
+    return values;
+}
+
+QString propertyToString(const QByteArray &buffer, const EVENT_PROPERTY_INFO &property)
+{
+    if (buffer.isEmpty()) {
         return QString();
     }
 
     const USHORT inType = property.nonStructType.InType;
-    if (inType == TDH_INTYPE_UNICODESTRING) {
-        return QString::fromWCharArray(reinterpret_cast<const wchar_t *>(buffer.constData()));
+    if (inType == TDH_INTYPE_UNICODESTRING || inType == TDH_INTYPE_COUNTEDSTRING) {
+        const int charCount = buffer.size() / static_cast<int>(sizeof(wchar_t));
+        return trimmedNulls(QString::fromWCharArray(reinterpret_cast<const wchar_t *>(buffer.constData()), charCount));
     }
-    if (inType == TDH_INTYPE_ANSISTRING) {
-        return QString::fromLocal8Bit(buffer.constData());
+    if (inType == TDH_INTYPE_ANSISTRING || inType == TDH_INTYPE_COUNTEDANSISTRING) {
+        return trimmedNulls(QString::fromLocal8Bit(buffer.constData(), buffer.size()));
     }
-    if (inType == TDH_INTYPE_UINT32 && size >= sizeof(UINT32)) {
+    if (inType == TDH_INTYPE_UINT32 && buffer.size() >= static_cast<int>(sizeof(UINT32))) {
         return QString::number(*reinterpret_cast<const UINT32 *>(buffer.constData()));
     }
-    if (inType == TDH_INTYPE_INT32 && size >= sizeof(INT32)) {
+    if (inType == TDH_INTYPE_INT32 && buffer.size() >= static_cast<int>(sizeof(INT32))) {
         return QString::number(*reinterpret_cast<const INT32 *>(buffer.constData()));
     }
+    if (inType == TDH_INTYPE_UINT16 && buffer.size() >= static_cast<int>(sizeof(UINT16))) {
+        return QString::number(*reinterpret_cast<const UINT16 *>(buffer.constData()));
+    }
+    if (inType == TDH_INTYPE_UINT64 && buffer.size() >= static_cast<int>(sizeof(UINT64))) {
+        return QString::number(*reinterpret_cast<const UINT64 *>(buffer.constData()));
+    }
 
-    return QString();
+    const QStringList embedded = printableStringsFromBytes(buffer);
+    return embedded.join(' ');
+}
+
+QList<IpAddress> extractIpAddresses(const QString &value);
+
+QList<IpAddress> extractIpAddressesFromBytes(const QByteArray &buffer)
+{
+    QList<IpAddress> result;
+    if (buffer.size() == 4) {
+        const auto *bytes = reinterpret_cast<const uchar *>(buffer.constData());
+        result.append(IpAddress::fromV4Bytes(bytes[0], bytes[1], bytes[2], bytes[3]));
+    } else if (buffer.size() == 16) {
+        result.append(IpAddress::fromV6(reinterpret_cast<const quint8 *>(buffer.constData())));
+    }
+
+    for (const QString &value : printableStringsFromBytes(buffer)) {
+        const QList<IpAddress> extracted = extractIpAddresses(value);
+        for (const IpAddress &ip : extracted) {
+            if (!result.contains(ip)) {
+                result.append(ip);
+            }
+        }
+    }
+
+    return result;
 }
 
 QList<IpAddress> extractIpAddresses(const QString &value)
@@ -87,7 +186,10 @@ QList<IpAddress> extractIpAddresses(const QString &value)
     static const QRegularExpression tokenRegex(QStringLiteral("[0-9A-Fa-f:.]+"));
     QRegularExpressionMatchIterator it = tokenRegex.globalMatch(value);
     while (it.hasNext()) {
-        const QString token = it.next().captured(0);
+        QString token = it.next().captured(0);
+        while (!token.isEmpty() && token.endsWith('.')) {
+            token.chop(1);
+        }
         if (token.contains('.')) {
             const QStringList octets = token.split('.');
             if (octets.size() == 4) {
@@ -113,6 +215,15 @@ QList<IpAddress> extractIpAddresses(const QString &value)
         }
     }
     return result;
+}
+
+void appendUniqueIps(QList<IpAddress> &target, const QList<IpAddress> &source)
+{
+    for (const IpAddress &ip : source) {
+        if (!target.contains(ip)) {
+            target.append(ip);
+        }
+    }
 }
 
 } // namespace
@@ -246,6 +357,7 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
     observation.source = "etw_dns_client";
 
     QStringList propertyNames;
+    bool hasResultProperty = false;
     for (ULONG i = 0; i < info->TopLevelPropertyCount; ++i) {
         const EVENT_PROPERTY_INFO &property = info->EventPropertyInfoArray[i];
         const QString name = propertyName(info, property);
@@ -254,14 +366,22 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
         }
         propertyNames.append(name);
 
-        const QString value = propertyToString(record, info, property).trimmed();
-        if (value.isEmpty()) {
+        const QString lowerName = name.toLower();
+        const QByteArray rawValue = propertyRawBytes(record, info, property);
+        const QString value = propertyToString(rawValue, property).trimmed();
+        const bool isResultLike = lowerName.contains("result")
+                || lowerName.contains("answer")
+                || lowerName.contains("addr")
+                || lowerName.contains("ip");
+        hasResultProperty = hasResultProperty || isResultLike;
+
+        if (value.isEmpty() && rawValue.isEmpty()) {
             continue;
         }
 
-        const QString lowerName = name.toLower();
         if ((lowerName.contains("query") || lowerName.contains("name") || lowerName.contains("host"))
                 && observation.queryName.isEmpty()
+                && !value.isEmpty()
                 && !value.contains(' ')
                 && !value.contains('\\')) {
             observation.queryName = value;
@@ -283,26 +403,42 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
             }
         }
 
-        if (lowerName.contains("addr") || lowerName.contains("ip") || lowerName.contains("answer")) {
-            const QList<IpAddress> ips = extractIpAddresses(value);
-            for (const IpAddress &ip : ips) {
-                if (!observation.answerIps.contains(ip)) {
-                    observation.answerIps.append(ip);
-                }
-            }
+        if (lowerName.contains("status")) {
+            observation.status = value;
+        }
+
+        if (isResultLike) {
+            appendUniqueIps(observation.answerIps, extractIpAddresses(value));
+            appendUniqueIps(observation.answerIps, extractIpAddressesFromBytes(rawValue));
         }
     }
 
+    if (hasResultProperty && observation.answerIps.isEmpty() && record->UserData && record->UserDataLength > 0) {
+        const QByteArray userData(reinterpret_cast<const char *>(record->UserData),
+                                  static_cast<int>(record->UserDataLength));
+        appendUniqueIps(observation.answerIps, extractIpAddressesFromBytes(userData));
+    }
+
     if (!observation.queryName.isEmpty() && !observation.answerIps.isEmpty()) {
-        observation.status = "success";
+        if (observation.status.isEmpty()) {
+            observation.status = "success";
+        }
         emit dnsObserved(observation);
-    } else {
+    } else if (observation.queryName.isEmpty() || hasResultProperty) {
         logUnknownEvent(record, propertyNames);
     }
 }
 
 void EtwDnsMonitor::logUnknownEvent(EVENT_RECORD *record, const QStringList &propertyNames)
 {
+    const QString shape = QString("%1:%2")
+            .arg(record->EventHeader.EventDescriptor.Id)
+            .arg(propertyNames.join('|'));
+    if (m_loggedUnknownEventShapes.contains(shape)) {
+        return;
+    }
+    m_loggedUnknownEventShapes.insert(shape);
+
     emit errorOccurred(QString("Unparsed DNS ETW event id=%1 properties=[%2]")
                        .arg(record->EventHeader.EventDescriptor.Id)
                        .arg(propertyNames.join(", ")));

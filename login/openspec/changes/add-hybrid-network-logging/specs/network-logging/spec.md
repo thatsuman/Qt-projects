@@ -138,9 +138,10 @@ The system SHALL infer application protocol hints based on transport protocol an
 
 #### Scenario: Protocol hint format
 - **WHEN** a session is closed
-- **THEN** the record SHALL include `app_protocol_hint`, `app_protocol_confidence`, and `app_protocol_reason` fields.
+- **THEN** the record SHALL include `app_protocol_hint` and `application_layer_category` fields.
 - **AND** the transport protocol (TCP/UDP/ICMP) SHALL always be recorded as ground truth.
 - **AND** the system SHALL NOT claim REST, GraphQL, gRPC, or WebSocket for encrypted traffic.
+- **AND** the `application_layer_category` field SHALL be derived only from visible metadata such as ALPN, transport, and ports.
 
 ### Requirement: JSONL network session output
 
@@ -148,7 +149,8 @@ The system SHALL write completed network session records to `logs/<username>/net
 
 #### Scenario: Record fields
 - **WHEN** a network session record is written
-- **THEN** it SHALL include: `type` ("network_session"), `schema_version` (1), `username`, `flow_id`, `start_time_utc`, `end_time_utc`, `duration_ms`, `local` (ip, port), `remote` (ip, port, hostname, hostname_source, hostname_confidence, hostname_candidates), `process` (pid, name, path, source, confidence), `transport_protocol`, `app_protocol_hint`, `app_protocol_confidence`, `app_protocol_reason`, `bytes` (sent_total, received_total, sent_payload, received_payload), `packets` (sent, received), `close_reason`, and `flags` (ipv6, loopback).
+- **THEN** it SHALL include the compact fields: `schema_version` (1), `start_time_utc`, `end_time_utc`, `remote` (ip, port, hostname, hostname_confidence), `process` (pid, name, confidence), `transport_protocol`, `app_protocol_hint`, `application_layer_category`, `bytes` (sent_total, received_total), `packets` (sent, received), and `close_reason`.
+- **AND** it SHALL omit verbose diagnostic fields such as local endpoint, payload byte counts, process path/source, hostname source/candidates, flow id, username, duration, and flags from the default session log.
 
 #### Scenario: Error diagnostics
 - **WHEN** a network subsystem error occurs
@@ -161,14 +163,36 @@ The system SHALL write completed network session records to `logs/<username>/net
 
 Each network subsystem (WinDivert packet, WinDivert flow, ETW DNS, IP Helper) SHALL fail independently. A failure in one subsystem SHALL NOT prevent other subsystems or the existing ActivityLogger from operating.
 
+#### Scenario: Independent subsystem failure
+- **WHEN** any one network subsystem fails during startup or runtime
+- **THEN** the failure SHALL be logged to `network_error.txt`
+- **AND** all other available network subsystems SHALL continue operating
+- **AND** the existing ActivityLogger SHALL continue operating.
+
 ### Requirement: Shutdown flushing
 
 On logout or application close, the system SHALL: stop capture sources first (no new events), stop ETW and IP Helper, flush all active sessions from FlowManager with `close_reason = app_shutdown`, flush and close the writer, and join worker threads cleanly.
+
+#### Scenario: Stop order and final flush
+- **WHEN** the user logs out or the application closes while network logging is active
+- **THEN** capture sources SHALL be stopped before FlowManager is flushed
+- **AND** all active sessions SHALL be emitted with `close_reason = app_shutdown`
+- **AND** the writer SHALL flush and close before worker threads are joined.
 
 ### Requirement: Threading
 
 All long-running or blocking network operations SHALL run off the UI thread. The FlowManager SHALL run on its own dedicated thread. ETW `ProcessTrace` and IP Helper polling SHALL NOT run in the FlowManager thread — each SHALL have its own thread.
 
+#### Scenario: Worker-thread isolation
+- **WHEN** network logging starts
+- **THEN** WinDivert packet capture, WinDivert flow capture, ETW DNS monitoring, IP Helper polling, FlowManager, and NetworkJsonlWriter SHALL run outside the UI thread
+- **AND** ETW DNS monitoring and IP Helper polling SHALL NOT run in the FlowManager thread.
+
 ### Requirement: No privacy-violating data
 
 The system SHALL NOT log: browser history, decrypted payloads, HTTP bodies, request/response payloads, credentials, cookies, tokens, or any data obtained via TLS decryption or MITM proxying.
+
+#### Scenario: Session record privacy boundary
+- **WHEN** network traffic is captured and a session record is written
+- **THEN** the record SHALL include only header-derived endpoints, aggregate counters, process/hostname attribution, protocol hints, timestamps, flags, and close reason
+- **AND** the record SHALL NOT include browser history, URLs, payload bodies, credentials, cookies, tokens, or decrypted content.

@@ -4,6 +4,9 @@
 #include "network/capture/windivertpacketcapture.h"
 #include "network/dns/etwdnsmonitor.h"
 #include "network/flow/flowmanager.h"
+#include "network/merge/consecutiverecordmerger.h"
+#include "network/model/networkevents.h"
+#include "network/model/networksessionrecord.h"
 #include "network/process/iphelperconnectionpoller.h"
 #include "network/writer/networkjsonlwriter.h"
 
@@ -48,6 +51,7 @@ void NetworkOrchestrator::start(const QString &username)
     m_flowManager = createWorker<FlowManager>(m_flowManagerThread);
     m_dnsMonitor = createWorker<EtwDnsMonitor>(m_dnsThread);
     m_ipHelperPoller = createWorker<IpHelperConnectionPoller>(m_ipHelperThread);
+    m_merger = createWorker<ConsecutiveRecordMerger>(m_writerThread);
     m_writer = createWorker<NetworkJsonlWriter>(m_writerThread);
 
     connect(m_packetCapture, &WinDivertPacketCapture::packetObserved,
@@ -59,6 +63,8 @@ void NetworkOrchestrator::start(const QString &username)
     connect(m_dnsMonitor, &EtwDnsMonitor::dnsObserved,
             m_flowManager, &FlowManager::handleDnsObservation, Qt::QueuedConnection);
     connect(m_flowManager, &FlowManager::sessionClosed,
+            m_merger, &ConsecutiveRecordMerger::processSessionRecord, Qt::QueuedConnection);
+    connect(m_merger, &ConsecutiveRecordMerger::recordReadyForLogging,
             m_writer, &NetworkJsonlWriter::writeSession, Qt::QueuedConnection);
 
     const auto connectError = [this](QObject *source) {
@@ -118,6 +124,9 @@ void NetworkOrchestrator::stop()
                                   Q_ARG(QString, QString("app_shutdown")));
         QMetaObject::invokeMethod(m_flowManager, "stop", Qt::BlockingQueuedConnection);
     }
+    if (m_merger) {
+        QMetaObject::invokeMethod(m_merger, "flush", Qt::BlockingQueuedConnection);
+    }
     if (m_writer) {
         QMetaObject::invokeMethod(m_writer, "stop", Qt::BlockingQueuedConnection);
     }
@@ -140,6 +149,7 @@ void NetworkOrchestrator::stop()
     m_flowManager = nullptr;
     m_dnsMonitor = nullptr;
     m_ipHelperPoller = nullptr;
+    m_merger = nullptr;
     m_writer = nullptr;
     m_active = false;
     m_username.clear();

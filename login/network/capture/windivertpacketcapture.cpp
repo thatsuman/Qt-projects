@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QProcessEnvironment>
+#include <QString>
 
 #include "windivert.h"
 
@@ -61,6 +62,155 @@ TransportProtocol transportFromProtocol(UINT8 protocol)
 IpAddress fromV6Words(const UINT32 *words)
 {
     return IpAddress::fromV6(reinterpret_cast<const quint8 *>(words));
+}
+
+quint16 readBigEndian16(const quint8 *data)
+{
+    return static_cast<quint16>((static_cast<quint16>(data[0]) << 8) | data[1]);
+}
+
+quint32 readBigEndian24(const quint8 *data)
+{
+    return (static_cast<quint32>(data[0]) << 16)
+         | (static_cast<quint32>(data[1]) << 8)
+         | static_cast<quint32>(data[2]);
+}
+
+bool isReasonableHostname(const QString &hostname)
+{
+    if (hostname.size() < 3 || hostname.size() > 253 || !hostname.contains('.')) {
+        return false;
+    }
+
+    for (const QChar ch : hostname) {
+        if (ch.isLetterOrNumber() || ch == '-' || ch == '.') {
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+struct TlsClientHelloMetadata
+{
+    QString serverName;
+    QString alpn;
+};
+
+TlsClientHelloMetadata extractTlsClientHelloMetadata(const void *payload, UINT payloadLen)
+{
+    TlsClientHelloMetadata metadata;
+    if (!payload || payloadLen < 43) {
+        return metadata;
+    }
+
+    const auto *data = reinterpret_cast<const quint8 *>(payload);
+    if (data[0] != 0x16 || data[5] != 0x01) {
+        return metadata;
+    }
+
+    const quint16 recordLength = readBigEndian16(data + 3);
+    if (static_cast<UINT>(recordLength + 5) > payloadLen) {
+        return metadata;
+    }
+
+    const quint32 handshakeLength = readBigEndian24(data + 6);
+    const UINT handshakeEnd = 9U + handshakeLength;
+    if (handshakeEnd > payloadLen) {
+        return metadata;
+    }
+
+    UINT offset = 9;
+    offset += 2;  // client_version
+    offset += 32; // random
+    if (offset + 1 > handshakeEnd) {
+        return metadata;
+    }
+
+    const UINT sessionIdLength = data[offset++];
+    offset += sessionIdLength;
+    if (offset + 2 > handshakeEnd) {
+        return metadata;
+    }
+
+    const UINT cipherSuitesLength = readBigEndian16(data + offset);
+    offset += 2 + cipherSuitesLength;
+    if (offset + 1 > handshakeEnd) {
+        return metadata;
+    }
+
+    const UINT compressionMethodsLength = data[offset++];
+    offset += compressionMethodsLength;
+    if (offset + 2 > handshakeEnd) {
+        return metadata;
+    }
+
+    const UINT extensionsLength = readBigEndian16(data + offset);
+    offset += 2;
+    const UINT extensionsEnd = offset + extensionsLength;
+    if (extensionsEnd > handshakeEnd) {
+        return metadata;
+    }
+
+    while (offset + 4 <= extensionsEnd) {
+        const quint16 extensionType = readBigEndian16(data + offset);
+        const UINT extensionLength = readBigEndian16(data + offset + 2);
+        offset += 4;
+        if (offset + extensionLength > extensionsEnd) {
+            return metadata;
+        }
+
+        if (extensionType == 0 && extensionLength >= 5) {
+            UINT sniOffset = offset;
+            const UINT listLength = readBigEndian16(data + sniOffset);
+            sniOffset += 2;
+            const UINT listEnd = sniOffset + listLength;
+            if (listEnd > offset + extensionLength) {
+                return metadata;
+            }
+
+            while (sniOffset + 3 <= listEnd) {
+                const quint8 nameType = data[sniOffset++];
+                const UINT nameLength = readBigEndian16(data + sniOffset);
+                sniOffset += 2;
+                if (sniOffset + nameLength > listEnd) {
+                    return metadata;
+                }
+                if (nameType == 0) {
+                    const QString hostname = QString::fromLatin1(
+                        reinterpret_cast<const char *>(data + sniOffset),
+                        static_cast<int>(nameLength)).toLower();
+                    if (isReasonableHostname(hostname)) {
+                        metadata.serverName = hostname;
+                    }
+                }
+                sniOffset += nameLength;
+            }
+        } else if (extensionType == 16 && extensionLength >= 3) {
+            UINT alpnOffset = offset;
+            const UINT listLength = readBigEndian16(data + alpnOffset);
+            alpnOffset += 2;
+            const UINT listEnd = alpnOffset + listLength;
+            if (listEnd <= offset + extensionLength) {
+                QStringList protocols;
+                while (alpnOffset + 1 <= listEnd) {
+                    const UINT protocolLength = data[alpnOffset++];
+                    if (alpnOffset + protocolLength > listEnd) {
+                        break;
+                    }
+                    protocols.append(QString::fromLatin1(
+                        reinterpret_cast<const char *>(data + alpnOffset),
+                        static_cast<int>(protocolLength)));
+                    alpnOffset += protocolLength;
+                }
+                metadata.alpn = protocols.join(',');
+            }
+        }
+
+        offset += extensionLength;
+    }
+
+    return metadata;
 }
 
 } // namespace
@@ -175,6 +325,11 @@ void WinDivertPacketCapture::start()
             observation.tcpFlags.ack = tcpHeader->Ack != 0;
             observation.tcpFlags.fin = tcpHeader->Fin != 0;
             observation.tcpFlags.rst = tcpHeader->Rst != 0;
+            if (observation.direction == Direction::Outbound && observation.dstPort == 443) {
+                const TlsClientHelloMetadata tls = extractTlsClientHelloMetadata(payload, payloadLen);
+                observation.visibleHostname = tls.serverName;
+                observation.visibleAlpn = tls.alpn;
+            }
         } else if (udpHeader) {
             observation.srcPort = ntohsFn(udpHeader->SrcPort);
             observation.dstPort = ntohsFn(udpHeader->DstPort);

@@ -4,6 +4,8 @@ PASS   : FlowManagerTest::initTestCase()
 PASS   : FlowManagerTest::tcpFlowFlushProducesSessionRecord()
 PASS   : FlowManagerTest::writerCreatesJsonlFile()
 PASS   : FlowManagerTest::processSnapshotEnrichesSession()
+PASS   : FlowManagerTest::flowLifecycleBeforePacketEnrichesSession()
+PASS   : FlowManagerTest::udpLocalOnlySnapshotEnrichesSession()
 PASS   : FlowManagerTest::dnsObservationEnrichesHostname()
 PASS   : FlowManagerTest::missingWinDivertDegradesWithoutCrash()
 PASS   : FlowManagerTest::forcedEtwFailureDegradesWithoutHostname()
@@ -11,5 +13,5 @@ PASS   : FlowManagerTest::forcedIpHelperFailureKeepsProcessUnknown()
 PASS   : FlowManagerTest::highVolumeTrafficDoesNotLoseSessions()
 PASS   : FlowManagerTest::pidReuseSnapshotIsRejectedWhenProcessIsNewerThanFlow()
 PASS   : FlowManagerTest::cleanupTestCase()
-Totals: 11 passed, 0 failed, 0 skipped, 0 blacklisted, 66ms
+Totals: 13 passed, 0 failed, 0 skipped, 0 blacklisted, 46ms
 ********* Finished testing of FlowManagerTest *********

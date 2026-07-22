@@ -15,7 +15,12 @@ win32: RC_FILE = login.rc
 # Allow #include "auth/authmanager.h" style includes from any source file
 INCLUDEPATH += .
 win32: INCLUDEPATH += $$PWD/third_party/WinDivert/include
-win32: LIBS += -L$$PWD/third_party/WinDivert/x64 -lWinDivert
+win32 {
+    CONFIG(debug, debug|release): WINDIVERT_DEPLOY_DIR = $$OUT_PWD/debug
+    else: WINDIVERT_DEPLOY_DIR = $$OUT_PWD/release
+
+    QMAKE_POST_LINK += $$quote(cmd /c if not exist "$$shell_path($$WINDIVERT_DEPLOY_DIR)" mkdir "$$shell_path($$WINDIVERT_DEPLOY_DIR)" && copy /Y "$$shell_path($$PWD/third_party/WinDivert/x64/WinDivert.dll)" "$$shell_path($$WINDIVERT_DEPLOY_DIR/WinDivert.dll)" && copy /Y "$$shell_path($$PWD/third_party/WinDivert/x64/WinDivert64.sys)" "$$shell_path($$WINDIVERT_DEPLOY_DIR/WinDivert64.sys)")
+}
 
 SOURCES += \
     main.cpp \
@@ -29,6 +34,7 @@ SOURCES += \
     network/dns/dnscache.cpp \
     network/dns/etwdnsmonitor.cpp \
     network/flow/flowmanager.cpp \
+    network/merge/consecutiverecordmerger.cpp \
     network/orchestrator/networkorchestrator.cpp \
     network/process/iphelperconnectionpoller.cpp \
     network/process/processresolver.cpp \
@@ -47,6 +53,7 @@ HEADERS += \
     network/dns/dnscache.h \
     network/dns/etwdnsmonitor.h \
     network/flow/flowmanager.h \
+    network/merge/consecutiverecordmerger.h \
     network/model/flowkey.h \
     network/model/flowsession.h \
     network/model/networkevents.h \

@@ -34,7 +34,7 @@
 ## Phase 3: WinDivert Packet Capture
 
 - [x] 3.1 Vendor WinDivert 2.2.2 into `third_party/WinDivert/` - include headers, x64 lib, DLL, signed .sys driver, and LGPL license file.
-- [x] 3.2 Add WinDivert include path and library to `login.pro`: `INCLUDEPATH += $$PWD/third_party/WinDivert/include`, `LIBS += -L$$PWD/third_party/WinDivert/x64 -lWinDivert`.
+- [x] 3.2 Add WinDivert include path to `login.pro` and keep WinDivert loaded dynamically at runtime so missing DLL/SYS dependencies degrade gracefully instead of preventing app launch.
 - [x] 3.3 Create `network/capture/windivertpacketcapture.h` and `.cpp` - open WinDivert handle with `WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY` on NETWORK layer. Blocking `WinDivertRecv` loop on its own QThread.
 - [x] 3.4 Parse IP + TCP/UDP headers only (no payload). Build `PacketObservation` and emit `packetObserved` signal.
 - [x] 3.5 Implement RAII handle wrapper - `WinDivertClose` in destructor and stop method.
@@ -91,3 +91,9 @@
 - [x] 8.8 Test PID reuse - ProcessResolver validates creation time, no false attribution.
 - [x] 8.9 Verify existing ActivityLogger and hooks still work correctly after all changes.
 - [x] 8.10 Final full build with no warnings. Verify all JSONL records match schema_version 1.
+
+## Phase 9: Follow-up Runtime Log Refinements
+
+- [x] 9.1 Add `application_layer_category` to the compact JSONL schema.
+- [x] 9.2 Improve DNS ETW parsing fallback for `QueryResults` payloads that expose IP answers only in raw event data.
+- [x] 9.3 Add FlowManager tests for application-layer category output.
