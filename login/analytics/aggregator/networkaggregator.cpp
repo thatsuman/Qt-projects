@@ -81,11 +81,13 @@ NetworkOverview NetworkAggregator::buildOverview(const QList<NetworkRecord> &rec
         ov.totalBytesSent     += rec.bytesSent;
         ov.totalBytesReceived += rec.bytesReceived;
         ov.totalBytes         += rec.totalBytes();
-        if (rec.remoteHostname.isEmpty()) ov.unknownHostCount++;
-        if (rec.processName.isEmpty() || rec.processName == QStringLiteral("unknown"))
-            ov.unknownProcessCount++;
+        if (rec.remoteHostname.isEmpty())
+            ov.unknownHostCount++;
         else
             ov.hostnameAttributedCount++;
+
+        if (rec.processName.isEmpty() || rec.processName == QStringLiteral("unknown"))
+            ov.unknownProcessCount++;
     }
 
     if (!byProcess.isEmpty()) ov.topNetworkProcess = byProcess.first().processName;

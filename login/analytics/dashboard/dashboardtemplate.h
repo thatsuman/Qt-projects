@@ -150,9 +150,19 @@ function fmtSecs(s) {
     return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
 }
 
+function escHtml(s) {
+    if (s == null) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 function confidenceBadge(c) {
     const cls = {high:'badge-high', medium:'badge-medium', low:'badge-low'}[c] ?? 'badge-none';
-    return '<span class="badge '+cls+'">'+(c||'none')+'</span>';
+    return '<span class="badge '+cls+'">'+escHtml(c||'none')+'</span>';
 }
 
 // ── Timeline bars ─────────────────────────────────────────────────────────────
@@ -169,8 +179,8 @@ function buildTimeline(buckets) {
         const netH = Math.round((b.totalBytes  / maxNet) * maxH);
         div.innerHTML = `
             <div class="tooltip">
-                ${b.label}<br>
-                App: ${b.foregroundProcess || '-'}<br>
+                ${escHtml(b.label)}<br>
+                App: ${escHtml(b.foregroundProcess || '-')}<br>
                 Active: ${fmtSecs(b.activeSeconds)}<br>
                 Net: ${fmtBytes(b.totalBytes)}
             </div>
@@ -215,7 +225,7 @@ function renderActivity(rows) {
     if (!tbody) return;
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No activity data</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => `<tr>
-        <td>${r.processName}</td>
+        <td>${escHtml(r.processName)}</td>
         <td data-val="${r.totalActiveDurationSeconds}">${fmtSecs(r.totalActiveDurationSeconds)}</td>
         <td data-val="${r.sessionCount}">${r.sessionCount}</td>
         <td data-val="${r.totalKeystrokes}">${r.totalKeystrokes.toLocaleString()}</td>
@@ -228,12 +238,12 @@ function renderNetworkByProcess(rows) {
     if (!tbody) return;
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No network data</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => `<tr>
-        <td>${r.processName}</td>
+        <td>${escHtml(r.processName)}</td>
         <td data-val="${r.bytesSent}">${fmtBytes(r.bytesSent)}</td>
         <td data-val="${r.bytesReceived}">${fmtBytes(r.bytesReceived)}</td>
         <td data-val="${r.totalBytes}">${fmtBytes(r.totalBytes)}</td>
         <td data-val="${r.sessionCount}">${r.sessionCount}</td>
-        <td>${(r.protocolHints||[]).join(', ')}</td>
+        <td>${(r.protocolHints||[]).map(escHtml).join(', ')}</td>
     </tr>`).join('');
 }
 
@@ -242,14 +252,14 @@ function renderNetworkRecords(rows) {
     if (!tbody) return;
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No network records</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => `<tr>
-        <td>${r.processName||'unknown'}</td>
-        <td>${r.remoteHostname || r.remoteIp}</td>
+        <td>${escHtml(r.processName||'unknown')}</td>
+        <td>${escHtml(r.remoteHostname || r.remoteIp)}</td>
         <td data-val="${r.remotePort}">${r.remotePort}</td>
-        <td>${r.appProtocolHint||r.transportProtocol}</td>
+        <td>${escHtml(r.appProtocolHint||r.transportProtocol)}</td>
         <td data-val="${r.bytesSent}">${fmtBytes(r.bytesSent)}</td>
         <td data-val="${r.bytesReceived}">${fmtBytes(r.bytesReceived)}</td>
         <td>${confidenceBadge(r.hostnameConfidence)}</td>
-        <td>${r.closeReason||''}</td>
+        <td>${escHtml(r.closeReason||'')}</td>
     </tr>`).join('');
 }
 
@@ -258,12 +268,12 @@ function renderAppUsage(rows) {
     if (!tbody) return;
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No data</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => `<tr>
-        <td>${r.processName}</td>
+        <td>${escHtml(r.processName)}</td>
         <td data-val="${r.activeDurationSeconds}">${fmtSecs(r.activeDurationSeconds)}</td>
         <td data-val="${r.keystrokeCount}">${r.keystrokeCount.toLocaleString()}</td>
         <td data-val="${r.bytesSent}">${fmtBytes(r.bytesSent)}</td>
         <td data-val="${r.bytesReceived}">${fmtBytes(r.bytesReceived)}</td>
-        <td><span class="badge badge-approx">${r.correlationConfidence}</span></td>
+        <td><span class="badge badge-approx">${escHtml(r.correlationConfidence)}</span></td>
     </tr>`).join('');
 }
 )JS");

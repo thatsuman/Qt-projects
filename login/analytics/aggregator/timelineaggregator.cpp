@@ -63,6 +63,8 @@ QList<TimelineBucket> TimelineAggregator::aggregate(const QList<ActivityRecord> 
         return (idx >= 0 && idx < buckets.size()) ? idx : -1;
     };
 
+    QVector<QHash<QString, qint64>> procActiveSecs(bucketCount);
+
     // Distribute activity records into buckets
     for (const ActivityRecord &rec : activityRecords) {
         if (!rec.startTime.isValid()) continue;
@@ -74,12 +76,26 @@ QList<TimelineBucket> TimelineAggregator::aggregate(const QList<ActivityRecord> 
                 TimelineBucket &b = buckets[idx];
                 const QDateTime bucketEnd = b.bucketEnd;
                 const qint64 overlap = cur.secsTo(qMin(end, bucketEnd));
-                if (overlap > 0) b.activeSeconds += overlap;
-                // Track which process dominated this bucket by activity duration
-                b.foregroundProcess = rec.processName;
+                if (overlap > 0) {
+                    b.activeSeconds += overlap;
+                    procActiveSecs[idx][rec.processName] += overlap;
+                }
             }
             cur = cur.addSecs(m_intervalSeconds);
         }
+    }
+
+    // Set foregroundProcess to the process with maximum active seconds in each bucket
+    for (int i = 0; i < bucketCount; ++i) {
+        qint64 maxSecs = 0;
+        QString maxProc;
+        for (auto it = procActiveSecs[i].constBegin(); it != procActiveSecs[i].constEnd(); ++it) {
+            if (it.value() > maxSecs) {
+                maxSecs = it.value();
+                maxProc = it.key();
+            }
+        }
+        buckets[i].foregroundProcess = maxProc;
     }
 
     // Distribute network records into buckets

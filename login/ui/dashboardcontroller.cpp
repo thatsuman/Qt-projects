@@ -67,7 +67,6 @@ QString DashboardController::generateDashboard(const QString &username)
     }
     for (const Analytics::ErrorRecord &e : errRecords) {
         if (e.isDnsWarning) dq.dnsWarningCount++;
-        if (e.isShutdownFlush) dq.shutdownFlushedSessions++;
     }
     dq.unrecognizedDnsEventCount = diagRecords.size();
 

@@ -24,7 +24,11 @@ QString HtmlDashboardGenerator::generate(const DashboardDataModel &model, const 
     }
 
     QTextStream out(&file);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     out.setCodec("UTF-8");
+#else
+    out.setEncoding(QStringConverter::Utf8);
+#endif
     out << buildHtml(model);
     file.close();
     return path;
@@ -155,7 +159,7 @@ QString HtmlDashboardGenerator::buildHtml(const DashboardDataModel &model) const
         "<script>%11\n%12</script>"
         "</body></html>"
     )
-    .arg(model.username)                          // %1
+    .arg(model.username.toHtmlEscaped())            // %1
     .arg(dashboardCss())                          // %2
     .arg(model.generatedAt)                       // %3
     .arg(tabs)                                    // %4
@@ -275,9 +279,9 @@ QString HtmlDashboardGenerator::buildOverviewCards(const DashboardDataModel &mod
          + card(QStringLiteral("Active Time"),      fmtSecs(ov.totalActiveSeconds))
          + card(QStringLiteral("Total Sent"),       fmtBytes(nv.totalBytesSent))
          + card(QStringLiteral("Total Received"),   fmtBytes(nv.totalBytesReceived))
-         + card(QStringLiteral("Top Active App"),   ov.topActiveProcess.isEmpty() ? QStringLiteral("-") : ov.topActiveProcess)
-         + card(QStringLiteral("Top Network App"),  nv.topNetworkProcess.isEmpty() ? QStringLiteral("-") : nv.topNetworkProcess,
-                nv.topRemoteHost.isEmpty() ? QString() : QStringLiteral("-> %1").arg(nv.topRemoteHost))
+         + card(QStringLiteral("Top Active App"),   ov.topActiveProcess.isEmpty() ? QStringLiteral("-") : ov.topActiveProcess.toHtmlEscaped())
+         + card(QStringLiteral("Top Network App"),  nv.topNetworkProcess.isEmpty() ? QStringLiteral("-") : nv.topNetworkProcess.toHtmlEscaped(),
+                nv.topRemoteHost.isEmpty() ? QString() : QStringLiteral("-> %1").arg(nv.topRemoteHost.toHtmlEscaped()))
          + card(QStringLiteral("Network Sessions"), QString::number(nv.totalSessions))
          + card(QStringLiteral("Host Coverage"),
                 nv.totalSessions > 0
