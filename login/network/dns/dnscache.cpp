@@ -16,7 +16,7 @@ void DnsCache::addObservation(const DnsObservation &observation)
     const QDateTime observedUtc = observation.timestampUtc.isValid()
             ? observation.timestampUtc.toUTC()
             : QDateTime::currentDateTimeUtc();
-    const QDateTime expiresUtc = observedUtc.addSecs(qMax(1, observation.ttlSeconds));
+    const QDateTime expiresUtc = observedUtc.addSecs(qMax(60, observation.ttlSeconds));
 
     for (const IpAddress &ip : observation.answerIps) {
         Candidate candidate;
@@ -29,7 +29,7 @@ void DnsCache::addObservation(const DnsObservation &observation)
         QList<Candidate> &candidates = m_candidatesByIp[ip];
         bool replaced = false;
         for (Candidate &existing : candidates) {
-            if (existing.hostname == candidate.hostname && existing.pid == candidate.pid) {
+            if (existing.hostname == candidate.hostname && (existing.pid == candidate.pid || existing.pid == 0 || candidate.pid == 0)) {
                 existing = candidate;
                 replaced = true;
                 break;
@@ -61,18 +61,23 @@ HostnameAttribution DnsCache::lookup(const IpAddress &remoteIp, quint32 pid, con
             names.append(candidate.hostname);
         }
 
-        int score = 0;
+        int score = 10;
         if (candidate.expiresUtc >= nowUtc) {
             score += 20;
         } else if (candidate.expiresUtc.addSecs(m_staleWindowSeconds) >= nowUtc) {
-            score += 5;
+            score += 10;
         }
 
-        if (pid != 0 && candidate.pid == pid) {
-            score += 20;
+        if (pid != 0 && candidate.pid != 0 && candidate.pid == pid) {
+            score += 30;
         }
 
-        if (!flowStartTimeUtc.isValid() || candidate.observedUtc <= flowStartTimeUtc.addSecs(5)) {
+        if (flowStartTimeUtc.isValid()) {
+            const qint64 diffSecs = qAbs(candidate.observedUtc.secsTo(flowStartTimeUtc));
+            if (diffSecs <= 3600) {
+                score += 5;
+            }
+        } else {
             score += 5;
         }
 
@@ -82,13 +87,17 @@ HostnameAttribution DnsCache::lookup(const IpAddress &remoteIp, quint32 pid, con
         }
     }
 
+    if (bestScore <= 0 || best.hostname.isEmpty()) {
+        return result;
+    }
+
     result.primaryName = best.hostname;
     result.candidates = names;
     result.source = best.source.isEmpty() ? "etw_dns" : best.source;
 
     if (best.expiresUtc < nowUtc) {
         result.confidence = "low";
-    } else if (pid != 0 && best.pid == pid) {
+    } else if (pid != 0 && best.pid != 0 && best.pid == pid) {
         result.confidence = "high";
     } else {
         result.confidence = "medium";

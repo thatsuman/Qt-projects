@@ -162,15 +162,26 @@ void FlowManager::handleProcessSnapshot(const ProcessConnectionSnapshot &snapsho
 void FlowManager::handleDnsObservation(const DnsObservation &observation)
 {
     m_dnsCache.addObservation(observation);
+    for (const IpAddress &ip : observation.answerIps) {
+        emit errorOccurred(QStringLiteral("dns_cache_insert host=%1 ip=%2 pid=%3")
+                           .arg(observation.queryName)
+                           .arg(ip.toString())
+                           .arg(observation.pid));
+    }
 
-    if (observation.pid == 0 || observation.answerIps.isEmpty()) {
+    if (observation.answerIps.isEmpty()) {
         return;
     }
 
     for (FlowSession &session : m_sessions) {
         if (observation.answerIps.contains(session.key.remoteIp)) {
-            applyProcess(session, observation.pid, observation.processName, QString(),
-                         observation.source, "low");
+            if (!observation.queryName.isEmpty()) {
+                applyHostname(session, observation.queryName, "etw_dns", "medium");
+            }
+            if (observation.pid != 0) {
+                applyProcess(session, observation.pid, observation.processName, QString(),
+                             observation.source, "low");
+            }
         }
     }
 }
@@ -275,10 +286,38 @@ NetworkSessionRecord FlowManager::makeRecord(const FlowSession &session, const Q
     record.endTimeUtc = endTimeUtc;
     record.key = session.key;
     record.process = session.process;
-    const HostnameAttribution dnsHost = m_dnsCache.lookup(session.key.remoteIp, session.process.pid, session.startTimeUtc);
-    record.remoteHost = hostnameConfidenceRank(session.remoteHost.confidence) >= hostnameConfidenceRank(dnsHost.confidence)
-            ? session.remoteHost
-            : dnsHost;
+    const bool isDnsResolverTraffic = (session.key.remotePort == 53 || session.key.localPort == 53);
+    HostnameAttribution dnsHost;
+    if (!isDnsResolverTraffic) {
+        dnsHost = m_dnsCache.lookup(session.key.remoteIp, session.process.pid, session.startTimeUtc);
+        if (dnsHost.primaryName.isEmpty()) {
+            emit errorOccurred(QStringLiteral("dns_lookup_miss ip=%1 pid=%2 reason=no_candidate")
+                               .arg(session.key.remoteIp.toString())
+                               .arg(session.process.pid));
+        } else {
+            emit errorOccurred(QStringLiteral("dns_lookup_hit ip=%1 host=%2 confidence=%3 reason=ip_match")
+                               .arg(session.key.remoteIp.toString())
+                               .arg(dnsHost.primaryName)
+                               .arg(dnsHost.confidence));
+        }
+    }
+
+    if (session.remoteHost.primaryName.isEmpty()) {
+        record.remoteHost = dnsHost;
+    } else if (dnsHost.primaryName.isEmpty()) {
+        record.remoteHost = session.remoteHost;
+    } else {
+        record.remoteHost = hostnameConfidenceRank(session.remoteHost.confidence) >= hostnameConfidenceRank(dnsHost.confidence)
+                ? session.remoteHost
+                : dnsHost;
+    }
+
+    if (!record.remoteHost.primaryName.isEmpty()) {
+        emit errorOccurred(QStringLiteral("dns_assigned remote.hostname=%1 for ip=%2 confidence=%3")
+                           .arg(record.remoteHost.primaryName)
+                           .arg(record.key.remoteIp.toString())
+                           .arg(record.remoteHost.confidence));
+    }
     record.appProtocol = ProtocolInferencer::infer(session.key.transport, session.key.localPort, session.key.remotePort);
     record.applicationLayerCategory = inferApplicationLayerCategory(session);
     record.bytesSentTotal = session.bytesSentTotal;

@@ -52,7 +52,7 @@ QByteArray propertyRawBytes(EVENT_RECORD *record, PTRACE_EVENT_INFO info, const 
 
     PROPERTY_DATA_DESCRIPTOR descriptor = {};
     descriptor.PropertyName = reinterpret_cast<ULONGLONG>(reinterpret_cast<const BYTE *>(info) + property.NameOffset);
-    descriptor.ArrayIndex = ULONG_MAX;
+    descriptor.ArrayIndex = 0;
 
     ULONG size = 0;
     if (TdhGetPropertySize(record, 0, nullptr, 1, &descriptor, &size) != ERROR_SUCCESS || size == 0) {
@@ -226,6 +226,23 @@ void appendUniqueIps(QList<IpAddress> &target, const QList<IpAddress> &source)
     }
 }
 
+QString normalizeQueryName(QString name)
+{
+    name = name.trimmed().toLower();
+    while (name.endsWith('.')) {
+        name.chop(1);
+    }
+    if (name.isEmpty() || name.contains(' ') || name.contains('\\')) {
+        return QString();
+    }
+    bool isNumeric = false;
+    name.toULongLong(&isNumeric);
+    if (isNumeric) {
+        return QString();
+    }
+    return name;
+}
+
 } // namespace
 
 EtwDnsMonitor::EtwDnsMonitor(QObject *parent)
@@ -337,6 +354,13 @@ void WINAPI EtwDnsMonitor::eventRecordCallback(EVENT_RECORD *record)
 
 void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
 {
+    const USHORT eventId = record->EventHeader.EventDescriptor.Id;
+
+    // Ignore event 1001 (DNS interface/server config notification)
+    if (eventId == 1001) {
+        return;
+    }
+
     ULONG infoSize = 0;
     ULONG status = TdhGetEventInformation(record, 0, nullptr, nullptr, &infoSize);
     if (status != ERROR_INSUFFICIENT_BUFFER || infoSize == 0) {
@@ -358,6 +382,8 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
 
     QStringList propertyNames;
     bool hasResultProperty = false;
+    const bool isKnownDnsEvent = (eventId == 3008 || eventId == 3018 || eventId == 3020);
+
     for (ULONG i = 0; i < info->TopLevelPropertyCount; ++i) {
         const EVENT_PROPERTY_INFO &property = info->EventPropertyInfoArray[i];
         const QString name = propertyName(info, property);
@@ -369,25 +395,30 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
         const QString lowerName = name.toLower();
         const QByteArray rawValue = propertyRawBytes(record, info, property);
         const QString value = propertyToString(rawValue, property).trimmed();
-        const bool isResultLike = lowerName.contains("result")
-                || lowerName.contains("answer")
-                || lowerName.contains("addr")
-                || lowerName.contains("ip");
-        hasResultProperty = hasResultProperty || isResultLike;
+
+        const bool isQueryNameProp = (lowerName == QStringLiteral("queryname")
+                                    || lowerName == QStringLiteral("questionname")
+                                    || lowerName == QStringLiteral("hostname"));
+
+        const bool isResultProp = (lowerName == QStringLiteral("queryresults")
+                                 || lowerName == QStringLiteral("queryresult")
+                                 || lowerName == QStringLiteral("results")
+                                 || lowerName == QStringLiteral("answer")
+                                 || lowerName == QStringLiteral("answers")
+                                 || lowerName == QStringLiteral("ipaddress")
+                                 || lowerName == QStringLiteral("rdata"));
+
+        hasResultProperty = hasResultProperty || isResultProp;
 
         if (value.isEmpty() && rawValue.isEmpty()) {
             continue;
         }
 
-        if ((lowerName.contains("query") || lowerName.contains("name") || lowerName.contains("host"))
-                && observation.queryName.isEmpty()
-                && !value.isEmpty()
-                && !value.contains(' ')
-                && !value.contains('\\')) {
-            observation.queryName = value;
+        if (isQueryNameProp && observation.queryName.isEmpty() && !value.isEmpty()) {
+            observation.queryName = normalizeQueryName(value);
         }
 
-        if (lowerName.contains("pid") || lowerName.contains("processid")) {
+        if (lowerName == QStringLiteral("pid") || lowerName == QStringLiteral("processid")) {
             bool ok = false;
             const quint32 pid = value.toUInt(&ok);
             if (ok && pid != 0) {
@@ -395,7 +426,7 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
             }
         }
 
-        if (lowerName.contains("ttl")) {
+        if (lowerName == QStringLiteral("ttl")) {
             bool ok = false;
             const int ttl = value.toInt(&ok);
             if (ok && ttl > 0) {
@@ -403,11 +434,11 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
             }
         }
 
-        if (lowerName.contains("status")) {
+        if (lowerName == QStringLiteral("status") || lowerName == QStringLiteral("querystatus")) {
             observation.status = value;
         }
 
-        if (isResultLike) {
+        if (isResultProp) {
             appendUniqueIps(observation.answerIps, extractIpAddresses(value));
             appendUniqueIps(observation.answerIps, extractIpAddressesFromBytes(rawValue));
         }
@@ -419,12 +450,26 @@ void EtwDnsMonitor::handleEventRecord(EVENT_RECORD *record)
         appendUniqueIps(observation.answerIps, extractIpAddressesFromBytes(userData));
     }
 
+    if (!observation.queryName.isEmpty()) {
+        emit errorOccurred(QStringLiteral("[diag] dns_parsed eventId=%1 query=%2 answers=%3")
+                           .arg(eventId)
+                           .arg(observation.queryName)
+                           .arg(observation.answerIps.size()));
+    }
+
     if (!observation.queryName.isEmpty() && !observation.answerIps.isEmpty()) {
         if (observation.status.isEmpty()) {
-            observation.status = "success";
+            observation.status = QStringLiteral("success");
         }
+        QStringList ips;
+        for (const IpAddress &ip : observation.answerIps) {
+            ips.append(ip.toString());
+        }
+        emit errorOccurred(QStringLiteral("[diag] dns_emitted query=%1 ip=%2")
+                           .arg(observation.queryName)
+                           .arg(ips.join(QLatin1Char(','))));
         emit dnsObserved(observation);
-    } else if (observation.queryName.isEmpty() || hasResultProperty) {
+    } else if (isKnownDnsEvent && observation.queryName.isEmpty()) {
         logUnknownEvent(record, propertyNames);
     }
 }
