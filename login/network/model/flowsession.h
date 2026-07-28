@@ -25,6 +25,8 @@ struct HostnameAttribution
     QStringList candidates;
     QString source = "unknown";
     QString confidence = "none";
+    QString status = "unresolved";
+    QString reason = "no_dns_candidate";
 };
 
 struct ProtocolHint

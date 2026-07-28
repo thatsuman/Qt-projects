@@ -46,6 +46,8 @@ struct NetworkSessionRecord
         remote["port"] = static_cast<int>(key.remotePort);
         remote["hostname"] = remoteHost.primaryName.isEmpty() ? QJsonValue() : QJsonValue(remoteHost.primaryName);
         remote["hostname_confidence"] = remoteHost.confidence;
+        remote["hostname_status"] = remoteHost.status;
+        remote["hostname_reason"] = remoteHost.reason;
         root["remote"] = remote;
 
         root["transport_protocol"] = transportToString(key.transport);

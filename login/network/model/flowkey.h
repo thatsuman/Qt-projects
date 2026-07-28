@@ -86,6 +86,38 @@ public:
         return true;
     }
 
+    bool isPrivateOrLocal() const
+    {
+        if (isNull() || isAny() || isLoopback()) {
+            return true;
+        }
+
+        if (!m_ipv6) {
+            const quint8 a = m_bytes[12];
+            const quint8 b = m_bytes[13];
+            if (a == 10) return true;
+            if (a == 172 && (b >= 16 && b <= 31)) return true;
+            if (a == 192 && b == 168) return true;
+            if (a == 169 && b == 254) return true;
+            if (a >= 224 && a <= 239) return true;
+            if (a >= 240) return true;
+            return false;
+        }
+
+        if (m_bytes[0] == 0xff) return true;
+        if (m_bytes[0] == 0xfe && (m_bytes[1] & 0xc0) == 0x80) return true;
+        return false;
+    }
+
+    bool isMulticast() const
+    {
+        if (!m_ipv6) {
+            const quint8 a = m_bytes[12];
+            return a >= 224 && a <= 239;
+        }
+        return m_bytes[0] == 0xff;
+    }
+
     bool isLoopback() const
     {
         if (!m_ipv6) {
