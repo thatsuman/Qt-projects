@@ -339,17 +339,18 @@ void FlowManager::applyProcess(FlowSession &session, quint32 pid, const QString 
         return;
     }
 
+    if (session.process.pid == pid) {
+        if (!name.isEmpty() && (session.process.name == "unknown" || session.process.name.isEmpty())) {
+            session.process.name = name;
+        }
+        if (!path.isEmpty() && session.process.path.isEmpty()) {
+            session.process.path = path;
+        }
+    }
+
     const int newRank = processConfidenceRank(confidence);
     const int existingRank = processConfidenceRank(session.process.confidence);
     if (newRank < existingRank) {
-        if (session.process.pid == pid) {
-            if (!name.isEmpty() && session.process.name == "unknown") {
-                session.process.name = name;
-            }
-            if (!path.isEmpty() && session.process.path.isEmpty()) {
-                session.process.path = path;
-            }
-        }
         return;
     }
 
@@ -428,9 +429,15 @@ QString FlowManager::inferApplicationLayerCategory(const FlowSession &session) c
 
 bool FlowManager::snapshotMatchesUdpLocalSocket(const ProcessConnectionSnapshot &snapshot, const FlowSession &session) const
 {
+    const bool localIpMatches = snapshot.key.localIp.isNull()
+            || snapshot.key.localIp.isAny()
+            || session.key.localIp.isNull()
+            || session.key.localIp.isAny()
+            || session.key.localIp == snapshot.key.localIp;
+
     return session.key.transport == TransportProtocol::Udp
         && session.key.ipVersion == snapshot.key.ipVersion
-        && session.key.localIp == snapshot.key.localIp
+        && localIpMatches
         && session.key.localPort == snapshot.key.localPort;
 }
 
