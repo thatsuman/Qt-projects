@@ -10,6 +10,7 @@ class ActivityLogger;
 class KeyboardHook;
 class MouseHook;
 class LoginUIManager;
+class DashboardController;
 namespace Network { class NetworkOrchestrator; }
 
 QT_BEGIN_NAMESPACE
@@ -41,6 +42,7 @@ private slots:
     void onLogin();
     void onLogout();
     void onTogglePasswordVisibility();
+    void onViewDashboard();
 
 private:
     Ui::MainWindow *ui;
@@ -52,6 +54,8 @@ private:
     ActivityLogger  *m_logger;
     LoginUIManager  *m_uiManager;
     Network::NetworkOrchestrator *m_networkOrch;
+    DashboardController          *m_dashboardController;
+    QString                       m_currentUser;
 };
 
 #endif // MAINWINDOW_H

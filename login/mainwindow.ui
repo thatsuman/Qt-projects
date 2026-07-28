@@ -147,6 +147,22 @@
      <bool>false</bool>
     </property>
    </widget>
+   <widget class="QPushButton" name="viewDashboardButton">
+    <property name="geometry">
+     <rect>
+      <x>300</x>
+      <y>400</y>
+      <width>241</width>
+      <height>29</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>View Dashboard</string>
+    </property>
+    <property name="visible">
+     <bool>false</bool>
+    </property>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">

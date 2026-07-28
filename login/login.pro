@@ -40,7 +40,17 @@ SOURCES += \
     network/process/processresolver.cpp \
     network/protocol/protocolinferencer.cpp \
     network/writer/networkjsonlwriter.cpp \
-    ui/loginuimanager.cpp
+    ui/loginuimanager.cpp \
+    ui/dashboardcontroller.cpp \
+    analytics/reader/activitylogreader.cpp \
+    analytics/reader/networklogreader.cpp \
+    analytics/reader/networkerrorreader.cpp \
+    analytics/aggregator/activityaggregator.cpp \
+    analytics/aggregator/networkaggregator.cpp \
+    analytics/aggregator/appcorrelator.cpp \
+    analytics/aggregator/timelineaggregator.cpp \
+    analytics/dashboard/dashboarddatamodel.cpp \
+    analytics/dashboard/htmldashboardgenerator.cpp
 
 HEADERS += \
     mainwindow.h \
@@ -63,7 +73,24 @@ HEADERS += \
     network/process/processresolver.h \
     network/protocol/protocolinferencer.h \
     network/writer/networkjsonlwriter.h \
-    ui/loginuimanager.h
+    ui/loginuimanager.h \
+    ui/dashboardcontroller.h \
+    analytics/model/analyticsmodels.h \
+    analytics/model/activitysummary.h \
+    analytics/model/networksummary.h \
+    analytics/model/appsummary.h \
+    analytics/model/timelinebucket.h \
+    analytics/reader/ianalyticreaders.h \
+    analytics/reader/activitylogreader.h \
+    analytics/reader/networklogreader.h \
+    analytics/reader/networkerrorreader.h \
+    analytics/aggregator/activityaggregator.h \
+    analytics/aggregator/networkaggregator.h \
+    analytics/aggregator/appcorrelator.h \
+    analytics/aggregator/timelineaggregator.h \
+    analytics/dashboard/dashboarddatamodel.h \
+    analytics/dashboard/dashboardtemplate.h \
+    analytics/dashboard/htmldashboardgenerator.h
 
 FORMS += \
     mainwindow.ui
