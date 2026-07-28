@@ -80,8 +80,10 @@ QList<TimelineBucket> TimelineAggregator::aggregate(const QList<ActivityRecord> 
                     b.activeSeconds += overlap;
                     procActiveSecs[idx][rec.processName] += overlap;
                 }
+                cur = bucketEnd;
+            } else {
+                cur = cur.addSecs(m_intervalSeconds);
             }
-            cur = cur.addSecs(m_intervalSeconds);
         }
     }
 
