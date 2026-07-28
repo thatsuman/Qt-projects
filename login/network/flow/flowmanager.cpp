@@ -314,13 +314,16 @@ NetworkSessionRecord FlowManager::makeRecord(const FlowSession &session, const Q
     }
 
     if (session.key.remoteIp.isLoopback()) {
-        record.remoteHost.status = "not_applicable";
+        record.remoteHost.status = "not_applicable_loopback";
         record.remoteHost.reason = "not_applicable_loopback";
+    } else if (session.key.remoteIp.isMulticast()) {
+        record.remoteHost.status = "not_applicable_multicast";
+        record.remoteHost.reason = "not_applicable_multicast";
     } else if (isPrivateOrLocalIp) {
-        record.remoteHost.status = "not_applicable";
+        record.remoteHost.status = "not_applicable_private_ip";
         record.remoteHost.reason = "not_applicable_private_ip";
     } else if (isDnsResolverTraffic) {
-        record.remoteHost.status = "not_applicable";
+        record.remoteHost.status = "not_applicable_dns_resolver";
         record.remoteHost.reason = "not_applicable_dns_resolver";
     } else if (!record.remoteHost.primaryName.isEmpty()) {
         record.remoteHost.status = "resolved";
@@ -328,7 +331,9 @@ NetworkSessionRecord FlowManager::makeRecord(const FlowSession &session, const Q
             record.remoteHost.reason = "dns_cache_hit";
         }
     } else {
-        record.remoteHost.status = "unresolved";
+        if (record.remoteHost.status.isEmpty() || record.remoteHost.status == "unresolved") {
+            record.remoteHost.status = record.remoteHost.reason.isEmpty() ? "no_dns_candidate" : record.remoteHost.reason;
+        }
         if (record.remoteHost.reason.isEmpty()) {
             record.remoteHost.reason = "no_dns_candidate";
         }

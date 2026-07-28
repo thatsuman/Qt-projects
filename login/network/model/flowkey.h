@@ -109,6 +109,15 @@ public:
         return false;
     }
 
+    bool isMulticast() const
+    {
+        if (!m_ipv6) {
+            const quint8 a = m_bytes[12];
+            return a >= 224 && a <= 239;
+        }
+        return m_bytes[0] == 0xff;
+    }
+
     bool isLoopback() const
     {
         if (!m_ipv6) {
