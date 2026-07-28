@@ -254,8 +254,10 @@ QString HtmlDashboardGenerator::buildDataScript(const DashboardDataModel &model)
     }
     root[QStringLiteral("timeline")] = tlArr;
 
-    const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Compact);
-    return QStringLiteral("const DASHBOARD_DATA = %1;").arg(QString::fromUtf8(json));
+    QString jsonStr = QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
+    jsonStr.replace(QLatin1Char('<'), QStringLiteral("\\u003c"));
+    jsonStr.replace(QLatin1Char('>'), QStringLiteral("\\u003e"));
+    return QStringLiteral("const DASHBOARD_DATA = %1;").arg(jsonStr);
 }
 
 // ── Overview cards ────────────────────────────────────────────────────────────
