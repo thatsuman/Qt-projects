@@ -74,6 +74,18 @@ public:
     bool isV6() const { return m_ipv6; }
     bool isNull() const { return m_bytes == std::array<quint8, 16>{}; }
 
+    bool isAny() const
+    {
+        if (isNull()) return true;
+        if (!m_ipv6) {
+            return m_bytes[12] == 0 && m_bytes[13] == 0 && m_bytes[14] == 0 && m_bytes[15] == 0;
+        }
+        for (int i = 0; i < 16; ++i) {
+            if (m_bytes[i] != 0) return false;
+        }
+        return true;
+    }
+
     bool isLoopback() const
     {
         if (!m_ipv6) {
