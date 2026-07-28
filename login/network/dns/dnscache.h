@@ -11,7 +11,7 @@ namespace Network {
 class DnsCache
 {
 public:
-    explicit DnsCache(int staleWindowSeconds = 300);
+    explicit DnsCache(int staleWindowSeconds = 3600);
 
     void addObservation(const DnsObservation &observation);
     HostnameAttribution lookup(const IpAddress &remoteIp, quint32 pid, const QDateTime &flowStartTimeUtc);
@@ -27,7 +27,7 @@ private:
         QString source;
     };
 
-    int m_staleWindowSeconds = 300;
+    int m_staleWindowSeconds = 3600;
     QHash<IpAddress, QList<Candidate>> m_candidatesByIp;
 };
 

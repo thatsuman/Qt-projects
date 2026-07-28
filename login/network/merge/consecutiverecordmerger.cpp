@@ -103,10 +103,11 @@ void ConsecutiveRecordMerger::mergeIntoPending(const NetworkSessionRecord &incom
 
     // Hostname enrichment & confidence
     if (m_pending.remoteHost.primaryName.isEmpty() && !incoming.remoteHost.primaryName.isEmpty()) {
-        m_pending.remoteHost.primaryName = incoming.remoteHost.primaryName;
-        m_pending.remoteHost.confidence = incoming.remoteHost.confidence;
-    } else {
-        m_pending.remoteHost.confidence = higherConfidence(m_pending.remoteHost.confidence, incoming.remoteHost.confidence);
+        m_pending.remoteHost = incoming.remoteHost;
+    } else if (!incoming.remoteHost.primaryName.isEmpty()) {
+        if (confidenceRank(incoming.remoteHost.confidence) > confidenceRank(m_pending.remoteHost.confidence)) {
+            m_pending.remoteHost = incoming.remoteHost;
+        }
     }
 
     // Process confidence
