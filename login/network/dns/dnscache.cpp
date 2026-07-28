@@ -49,6 +49,8 @@ HostnameAttribution DnsCache::lookup(const IpAddress &remoteIp, quint32 pid, con
 
     const QList<Candidate> candidates = m_candidatesByIp.value(remoteIp);
     if (candidates.isEmpty()) {
+        result.status = "unresolved";
+        result.reason = m_candidatesByIp.isEmpty() ? "no_dns_candidate" : "dns_seen_but_ip_not_matched";
         return result;
     }
 
@@ -88,19 +90,25 @@ HostnameAttribution DnsCache::lookup(const IpAddress &remoteIp, quint32 pid, con
     }
 
     if (bestScore <= 0 || best.hostname.isEmpty()) {
+        result.status = "unresolved";
+        result.reason = "stale_candidate_expired";
         return result;
     }
 
     result.primaryName = best.hostname;
     result.candidates = names;
     result.source = best.source.isEmpty() ? "etw_dns" : best.source;
+    result.status = "resolved";
 
     if (best.expiresUtc < nowUtc) {
         result.confidence = "low";
+        result.reason = "stale_cache_hit";
     } else if (pid != 0 && best.pid != 0 && best.pid == pid) {
         result.confidence = "high";
+        result.reason = "ip_and_pid_matched";
     } else {
         result.confidence = "medium";
+        result.reason = "ip_matched";
     }
 
     return result;

@@ -287,8 +287,9 @@ NetworkSessionRecord FlowManager::makeRecord(const FlowSession &session, const Q
     record.key = session.key;
     record.process = session.process;
     const bool isDnsResolverTraffic = (session.key.remotePort == 53 || session.key.localPort == 53);
+    const bool isPrivateOrLocalIp = session.key.remoteIp.isPrivateOrLocal();
     HostnameAttribution dnsHost;
-    if (!isDnsResolverTraffic) {
+    if (!isDnsResolverTraffic && !isPrivateOrLocalIp) {
         dnsHost = m_dnsCache.lookup(session.key.remoteIp, session.process.pid, session.startTimeUtc);
         if (dnsHost.primaryName.isEmpty()) {
             emit errorOccurred(QStringLiteral("dns_lookup_miss ip=%1 pid=%2 reason=no_candidate")
@@ -310,6 +311,27 @@ NetworkSessionRecord FlowManager::makeRecord(const FlowSession &session, const Q
         record.remoteHost = hostnameConfidenceRank(session.remoteHost.confidence) >= hostnameConfidenceRank(dnsHost.confidence)
                 ? session.remoteHost
                 : dnsHost;
+    }
+
+    if (session.key.remoteIp.isLoopback()) {
+        record.remoteHost.status = "not_applicable";
+        record.remoteHost.reason = "not_applicable_loopback";
+    } else if (isPrivateOrLocalIp) {
+        record.remoteHost.status = "not_applicable";
+        record.remoteHost.reason = "not_applicable_private_ip";
+    } else if (isDnsResolverTraffic) {
+        record.remoteHost.status = "not_applicable";
+        record.remoteHost.reason = "not_applicable_dns_resolver";
+    } else if (!record.remoteHost.primaryName.isEmpty()) {
+        record.remoteHost.status = "resolved";
+        if (record.remoteHost.reason.isEmpty() || record.remoteHost.reason == "no_dns_candidate") {
+            record.remoteHost.reason = "dns_cache_hit";
+        }
+    } else {
+        record.remoteHost.status = "unresolved";
+        if (record.remoteHost.reason.isEmpty()) {
+            record.remoteHost.reason = "no_dns_candidate";
+        }
     }
 
     if (!record.remoteHost.primaryName.isEmpty()) {
